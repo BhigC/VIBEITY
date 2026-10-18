@@ -379,7 +379,7 @@
       {title:"Community agreement",description:"Before joining, you'll need to accept VIBEITY's terms, data policy and community guidelines. Final policy text can be added when you provide it.",key:"terms",optional:false,html:()=>`<p class="subtle">Please review the final Terms and Conditions, Data Policy and Community Guidelines before launch.</p><label style="display:flex;gap:10px;align-items:flex-start;line-height:1.5"><input id="stepTerms" type="checkbox" style="margin-top:5px"> <span>I agree to the Terms and Conditions, Data Policy and Community Guidelines.</span></label>`}
     ];
     function renderOnboarding(){const s=steps[onboardingStep-1];$("stepCounter").textContent=`STEP ${onboardingStep} OF 11`;$("stepTitle").textContent=s.title;$("stepDescription").textContent=s.description;$("stepContent").innerHTML=s.html();$("stepMessage").textContent="";$("stepSkip").classList.toggle("hidden",!s.optional);$("stepContinue").textContent=onboardingStep===11?"Finish setup":"Continue";const u=currentUser();$("stepContent").querySelectorAll("[data-permission]").forEach(b=>{const key=b.dataset.permission==="location"?"locationPermission":b.dataset.permission==="notifications"?"notifications":null;if(key&&u&&u[key]==="allowed")b.classList.add("choice-selected");b.addEventListener("click",()=>handlePermission(b.dataset.permission))});$("stepContent").querySelectorAll("[data-value]").forEach(b=>{if(u&&u[s.key]===b.dataset.value)b.classList.add("choice-selected");b.addEventListener("click",()=>{const who=currentUser();if(who)who[s.key]=b.dataset.value;$("stepContent").querySelectorAll("[data-value]").forEach(x=>x.classList.toggle("choice-selected",x===b));saveState();toast("Choice saved.")} )})}
-    async function handlePermission(type){const u=currentUser();if(!u)return;const buttons=[...$("stepContent").querySelectorAll(`[data-permission="${type}"]`)];try{if(type==="location"){if(!navigator.geolocation)throw Error("Location isn't supported by this browser.");navigator.geolocation.getCurrentPosition(pos=>{u.locationPermission="allowed";u.latitude=pos.coords.latitude;u.longitude=pos.coords.longitude;buttons.forEach(b=>b.classList.add("choice-selected"));$("stepContent").querySelectorAll('[data-value="declined"]').forEach(b=>b.classList.remove("choice-selected"));saveState();toast("Location permission granted.")},()=>{u.locationPermission="declined";buttons.forEach(b=>b.classList.remove("choice-selected"));$("stepContent").querySelectorAll('[data-value="declined"]').forEach(b=>b.classList.add("choice-selected"));saveState();toast("Location access declined.")})}else if(type==="notifications"){if(!("Notification"in window))throw Error("Notifications aren't supported by this browser.");const result=await Notification.requestPermission();u.notifications=result;buttons.forEach(b=>b.classList.toggle("choice-selected",result==="granted"));saveState();toast(result==="granted"?"Notifications enabled.":"Notifications not enabled.")}else if(type==="contacts"){if("contacts"in navigator&&"ContactsManager"in window){const contacts=await navigator.contacts.select(["name"],{multiple:true});u.contactsGranted=true;u.contactCount=contacts.length;buttons.forEach(b=>b.classList.add("choice-selected"));saveState();toast("Contacts selected on this device.")}else toast("Contact selection isn't supported by this browser. You can invite friends another way.")}}catch(err){toast(err.message||"Permission could not be requested.")}}
+    async function handlePermission(type){const u=currentUser();if(!u)return;const buttons=[...$("stepContent").querySelectorAll(`[data-permission="${type}"]`)];try{if(type==="location"){if(!navigator.geolocation)throw Error("Location isn't supported by this browser.");navigator.geolocation.getCurrentPosition(pos=>{u.locationPermission="allowed";u.latitude=pos.coords.latitude;u.longitude=pos.coords.longitude;buttons.forEach(b=>b.classList.add("choice-selected"));$("stepContent").querySelectorAll('[data-value="declined"]').forEach(b=>b.classList.remove("choice-selected"));saveState();toast("Location permission granted.")},()=>{u.locationPermission="declined";buttons.forEach(b=>b.classList.remove("choice-selected"));$("stepContent").querySelectorAll('[data-value="declined"]').forEach(b=>b.classList.add("choice-selected"));saveState();toast("Location access declined.")})}else if(type==="notifications"){await vbNotifyPermission(u,buttons)}else if(type==="contacts"){if("contacts"in navigator&&"ContactsManager"in window){const contacts=await navigator.contacts.select(["name"],{multiple:true});u.contactsGranted=true;u.contactCount=contacts.length;buttons.forEach(b=>b.classList.add("choice-selected"));saveState();toast("Contacts selected on this device.")}else toast("Contact selection isn't supported by this browser. You can invite friends another way.")}}catch(err){toast(err.message||"Permission could not be requested.")}}
     async function readFileAsDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)})}
     async function saveStep(){const u=currentUser(),s=steps[onboardingStep-1];if(!u)return false;const value=$("stepValue");
       if(s.key==="intent"&&!u.intent){$("stepMessage").textContent="Please choose what you are here for.";return false}
@@ -1162,6 +1162,69 @@ setInterval(vbBeat,60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)vbBeat()});
 vbInit();
 </script>
+<script>
+/* ===== VIBEITY: step pages need the box filled (Skip for now skips) + clear notification messages ===== */
+async function vbNotifyPermission(u,buttons){
+  const sel=on=>{buttons.forEach(b=>b.classList.toggle("choice-selected",on));document.querySelectorAll('#stepContent [data-value="declined"]').forEach(b=>b.classList.toggle("choice-selected",!on))};
+  if(!("Notification" in window)){toast("This browser doesn't support notifications. You can tap Skip for now.");return}
+  let result=Notification.permission,already=false;
+  if(result==="denied"){u.notifications="declined";sel(false);saveState();toast("Notifications are blocked for this site in your browser. Tap the lock icon in the address bar, open Site settings, set Notifications to Allow, then try again.");return}
+  if(result==="granted")already=true;else result=await Notification.requestPermission();
+  if(result==="granted"){
+    u.notifications="allowed";sel(true);saveState();
+    try{new Notification("VIBEITY",{body:"Notifications are on. You'll hear about new matches and messages.",icon:"icons/icon-192.png"})}catch(e){}
+    toast(already?"Notifications are already allowed for this browser. You're all set.":"Notifications enabled.");
+  }else{u.notifications="declined";sel(false);saveState();toast("Notifications not enabled.")}
+}
+(function(){
+  const val=id=>($(id)?.value||"").trim();
+  function problem(){
+    const u=currentUser(),s=steps[onboardingStep-1];if(!u||!s)return null;
+    const P=(msg,els=[])=>({msg,els});
+    switch(s.key){
+      case"locationPermission":return["allowed","declined"].includes(u.locationPermission)?null:P("Choose Allow location or Don't allow to continue, or tap Skip for now.");
+      case"notifications":return["allowed","declined"].includes(u.notifications)?null:P("Choose Allow notifications or Don't allow to continue, or tap Skip for now.");
+      case"contacts":return(u.contactsGranted||u.contacts==="declined")?null:P("Pick an option above to continue, or tap Skip for now.");
+      case"photos":return(($("stepPhoto")?.files?.length)||u.photo)?null:P("Add your profile photo to continue, or tap Skip for now.",["stepPhoto"]);
+      case"profession":return val("stepValue")?null:P("Type your profession to continue, or tap Skip for now.",["stepValue"]);
+      case"location":{const m=[];if(!val("stepState"))m.push("stepState");if(!val("stepCity"))m.push("stepCity");return m.length?P("Fill in your state and city to continue, or tap Skip for now.",m):null}
+      case"bio":return val("stepValue")?null:P("Write a short bio to continue, or tap Skip for now.",["stepValue"]);
+      case"intent":return u.intent?null:P("Please choose what you are here for.");
+      case"gender":return val("stepValue")?null:P("Please select a gender to continue.",["stepValue"]);
+      case"username":return val("stepValue")?null:P("Choose a username to continue.",["stepValue"]);
+      case"terms":return $("stepTerms")?.checked?null:P("Please accept the agreement to continue.",["stepTerms"]);
+    }
+    return null;
+  }
+  function refresh(){
+    if($("onboardingPage").classList.contains("hidden"))return;
+    const p=problem(),btn=$("stepContinue");btn.classList.toggle("not-ready",!!p);
+    document.querySelectorAll("#stepContent .invalid").forEach(e=>{if(!p||!p.els.includes(e.id))e.classList.remove("invalid")});
+    const msg=$("stepMessage");
+    if(!p&&msg.dataset.vb!=="ok"){msg.textContent="✓ Done. Tap Continue.";msg.className="message ready";msg.dataset.vb="ok"}
+    if(p&&msg.dataset.vb==="ok"){msg.textContent="";msg.className="message";msg.dataset.vb=""}
+  }
+  const _save=saveStep;
+  saveStep=async function(){
+    const p=problem();
+    if(p){
+      const m=$("stepMessage");m.textContent=p.msg;m.className="message error";m.dataset.vb="";
+      document.querySelectorAll("#stepContent .invalid").forEach(e=>e.classList.remove("invalid"));
+      p.els.forEach(id=>{const e=$(id);if(e){void e.offsetWidth;e.classList.add("invalid")}});
+      const first=p.els[0]&&$(p.els[0]);if(first&&first.focus)try{first.focus({preventScroll:false})}catch(e){}
+      return false;
+    }
+    const m=$("stepMessage");if(m.dataset.vb==="ok"){m.textContent="";m.className="message";m.dataset.vb=""}
+    const ok=await _save();if(!ok){const mm=$("stepMessage");if(mm.textContent.trim()){mm.className="message error";mm.dataset.vb=""}}return ok;
+  };
+  const _render=renderOnboarding;
+  renderOnboarding=function(){_render();const m=$("stepMessage");m.className="message";m.dataset.vb="";refresh()};
+  $("stepContent").addEventListener("input",refresh);
+  $("stepContent").addEventListener("change",refresh);
+  $("stepContent").addEventListener("click",()=>setTimeout(refresh,60));
+  setInterval(refresh,350);
+})();
+</script>
 </body>
 </html>
 
@@ -1893,4 +1956,13 @@ a{color:var(--softpink)}
 .t-ico{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;display:grid;place-items:center;font-size:.7rem}
 .t-meta{position:absolute;left:0;right:0;bottom:0;padding:20px 8px 7px;background:linear-gradient(transparent,rgba(10,6,20,.85));color:#fff;font-size:.74rem;font-weight:700;text-align:left}
 @media(min-width:900px){.post-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+
+<style>
+/* ===== onboarding: continue only when filled ===== */
+#stepContinue.not-ready{opacity:.5;box-shadow:none;filter:saturate(.6)}
+.message.error{color:#FF8FA9}.message.success,.message.ready{color:#4ADE80}
+.invalid{border-color:var(--pink)!important;outline:2px solid rgba(255,61,110,.65)!important;animation:vbshake .35s}
+@keyframes vbshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.field-ok{border-color:#22C55E!important}
 </style>
