@@ -333,7 +333,7 @@
     function showAuth(mode){authMode=mode;showOnly("authPage");$("authTitle").textContent=mode==="signup"?"Create your account":mode==="login"?"Welcome back":mode==="newpassword"?"Create a new password":"Reset your password";$("authDescription").textContent=mode==="signup"?"Join VIBEITY and start meeting people.":mode==="login"?"Log in to continue to your Reels.":mode==="newpassword"?"Choose a new password for your account.":"We'll email you a secure password-reset link.";$("nameField").classList.toggle("hidden",mode!=="signup");$("confirmField").classList.toggle("hidden",mode!=="signup");$("recoveryPasswordField").classList.toggle("hidden",mode!=="newpassword");$("authPassword").required=mode==="signup"||mode==="login";$("authConfirm").required=mode==="signup";$("forgotPassword").classList.toggle("hidden",mode!=="login");$("authSubmit").textContent=mode==="signup"?"Create account":mode==="login"?"Log in":mode==="newpassword"?"Save new password":"Send reset email";$("switchPrompt").classList.toggle("hidden",mode==="reset"||mode==="newpassword");$("switchAuth").classList.toggle("hidden",mode==="reset"||mode==="newpassword");$("switchPrompt").textContent=mode==="signup"?"Already have an account?":"New to VIBEITY?";$("switchAuth").textContent=mode==="signup"?"Log in":"Create account";$("authMessage").textContent="";$("authMessage").className="message";$("authPassword").value="";$("authConfirm").value="";if(mode==="reset")$("authPassword").required=false;}
     function showPage(page){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));$("page-"+page).classList.add("active");document.querySelectorAll(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.page===page));window.scrollTo({top:0,behavior:"smooth"});if(page==="profile")renderProfile();if(page==="friends")renderFriends();if(page==="chats")renderChats();if(page==="reels")renderFeed()}
     function enterApp(){showOnly("appShell");$("bottomNav").classList.remove("hidden");$("logoutTop").classList.remove("hidden");showPage("reels");renderProfile();renderFriends();renderChats();renderFeed();renderAnnouncements()}
-    function finishSplash(){const splash=$("splash"),inner=$("splashInner");inner.classList.add("zoom-away");splash.classList.add("leaving");setTimeout(()=>{splash.remove();$("app").classList.remove("hidden");if(location.hash.includes("type=recovery")){showAuth("newpassword")}else if(state.user&&currentUser()){enterApp()}else{showOnly("welcomePage")}},650)}
+    function finishSplash(){const splash=$("splash"),inner=$("splashInner");inner.classList.add("zoom-away");splash.classList.add("leaving");setTimeout(()=>{splash.remove();$("app").classList.remove("hidden");if(location.hash.includes("type=recovery")){showAuth("newpassword")}else if(state.user&&currentUser()){if(currentUser().onboarded){enterApp()}else{onboardingStep=1;renderOnboarding();showOnly("onboardingPage")}}else{showOnly("welcomePage")}},650)}
     window.addEventListener("load",()=>{setTimeout(finishSplash,6000)});
     $("goCreate").addEventListener("click",()=>showAuth("signup"));
     $("goLogin").addEventListener("click",()=>showAuth("login"));
@@ -355,12 +355,12 @@
       }
       if(authMode==="signup"){
         if(password!==$("authConfirm").value){error("Your passwords do not match.");return}
-        if(vibeitySupabase){const {data,error:err}=await vibeitySupabase.auth.signUp({email,password,options:{data:{name:$("authName").value.trim()},emailRedirectTo:location.origin+location.pathname}});if(err){error(err.message);return}if(data.session){success("Account created. Continue to profile setup.")}else{success("Account created. Check your email and click the confirmation link before logging in.")}return}
+        if(vibeitySupabase){await vibeitySignUp(email,password,$("authName").value.trim(),error,success);return}
         if(state.users.some(u=>u.email===email)){error("An account with this email already exists in this browser. Try logging in.");return}
         const user={id:makeId(),name:$("authName").value.trim(),email,password,username:"",gender:"",profession:"",state:"",city:"",bio:"",photo:"",privacy:"public",onboarded:false,createdAt:Date.now()};state.users.push(user);state.user={id:user.id};saveState();onboardingStep=1;renderOnboarding();showOnly("onboardingPage");return;
       }
       if(authMode==="login"){
-        if(vibeitySupabase){const {data,error:err}=await vibeitySupabase.auth.signInWithPassword({email,password});if(err){error("Email or password is incorrect. If you just signed up, confirm your email first.");return}const profile={id:data.user.id,name:data.user.user_metadata?.name||email.split("@")[0],email,username:"",gender:"",profession:"",state:"",city:"",bio:"",photo:"",privacy:"public",onboarded:false};const existing=state.users.find(u=>u.id===profile.id);if(!existing)state.users.push(profile);state.user={id:data.user.id};saveState();onboardingStep=1;renderOnboarding();showOnly("onboardingPage");return}
+        if(vibeitySupabase){await vibeitySignIn(email,password,error);return}
         const user=state.users.find(u=>u.email===email&&u.password===password);if(!user){error("Email or password is incorrect. If you are new, create an account first.");return}state.user={id:user.id};saveState();if(user.onboarded)enterApp();else{onboardingStep=1;renderOnboarding();showOnly("onboardingPage")}
       }
     });
@@ -385,7 +385,7 @@
       if(s.key==="intent"&&!u.intent){$("stepMessage").textContent="Please choose what you are here for.";return false}
       if(s.key==="gender"){if(!value?.value){$("stepMessage").textContent="Please select a gender to continue.";return false}u.gender=value.value}
       if(s.key==="profession")u.profession=value?.value.trim()||"";
-      if(s.key==="username"){const username=value?.value.trim().replace(/^@/,"")||"";if(!/^[A-Za-z0-9_.]{3,30}$/.test(username)){ $("stepMessage").textContent="Use 3–30 letters, numbers, dots or underscores.";return false}if(state.users.some(other=>other.id!==u.id&&other.username.toLowerCase()===username.toLowerCase())){$("stepMessage").textContent="That username is already taken.";return false}u.username=username}
+      if(s.key==="username"){const username=value?.value.trim().replace(/^@/,"")||"";if(!/^[A-Za-z0-9_.]{3,30}$/.test(username)){ $("stepMessage").textContent="Use 3–30 letters, numbers, dots or underscores.";return false}if(state.users.some(other=>other.id!==u.id&&other.username.toLowerCase()===username.toLowerCase())){$("stepMessage").textContent="That username is already taken.";return false}if(window.vbUsernameTaken&&await window.vbUsernameTaken(username)){$("stepMessage").textContent="That username is already taken.";return false}u.username=username.toLowerCase()}
       if(s.key==="bio")u.bio=value?.value.trim()||"";
       if(s.key==="location"){u.state=$("stepState").value.trim();u.city=$("stepCity").value.trim()}
       if(s.key==="photos"){const photo=$("stepPhoto")?.files?.[0];const extras=[...($("stepExtras")?.files||[])];if(extras.length>3){$("stepMessage").textContent="Choose no more than three extra files.";return false}if(photo)u.photo=await readFileAsDataURL(photo);u.extraPhotos=[];for(const file of extras){if(file.type.startsWith("video/")){const duration=await getVideoDuration(file);if(duration>=180){$("stepMessage").textContent=`${file.name} must be shorter than 180 seconds.`;return false}}u.extraPhotos.push(await readFileAsDataURL(file))}}
@@ -1045,6 +1045,122 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
   setInterval(badge,1500);
   document.getElementById("chatPlus").addEventListener("click",()=>document.getElementById("chatTools").classList.toggle("open"));
 })();
+</script>
+<script>
+/* ===== VIBEITY Phase 2: accounts and profiles saved in Supabase ===== */
+const vbOn=!!vibeitySupabase;
+const vbIsDemo=id=>String(id||"").startsWith("demo-");
+let vbTimer=null,vbSig="",vbBusy=false;
+const vbSaveLocal=saveState;                      // the browser-only save
+const vbSigOf=u=>JSON.stringify([u.name,u.username,u.gender,u.intent,u.profession,u.state,u.city,u.bio,u.privacy,u.onboarded,u.prefs,u.photo&&u.photo.startsWith("data:")?"data":u.photo]);
+saveState=function(){vbSaveLocal();vbSchedulePush()};
+
+function vbCleanDemo(){
+  const d=id=>vbIsDemo(id);
+  state.users=state.users.filter(u=>!d(u.id));state.posts=state.posts.filter(p=>!d(p.userId));
+  state.friends=state.friends.filter(f=>!d(f.a)&&!d(f.b));state.requests=state.requests.filter(r=>!d(r.from)&&!d(r.to));
+  state.chats=state.chats.filter(c=>!c.members.some(d));state.announcements=(state.announcements||[]).filter(a=>!a.demo);
+  state.groups=(state.groups||[]).filter(g=>!g.demo);
+}
+function vbRowToUser(row,email){
+  return {id:row.id,name:row.name||"",email:email||"",username:row.username||"",gender:row.gender||"",intent:row.intent||"",profession:row.profession||"",state:row.state||"",city:row.city||"",bio:row.bio||"",photo:row.photo_url||"",privacy:row.privacy||"public",verified:!!row.verified,onboarded:!!row.onboarded,prefs:row.prefs||undefined,seen:[],createdAt:Date.parse(row.created_at)||Date.now()};
+}
+async function vbLoadProfile(authUser){
+  let {data,error}=await vibeitySupabase.from("profiles").select("*").eq("id",authUser.id).maybeSingle();
+  if(!data&&!error){
+    const ins=await vibeitySupabase.from("profiles").insert({id:authUser.id,name:authUser.user_metadata?.name||(authUser.email||"").split("@")[0]}).select("*").single();
+    data=ins.data;error=ins.error;
+  }
+  if(error||!data)throw (error||new Error("Profile not found"));
+  return vbRowToUser(data,authUser.email);
+}
+function vbMergeLocal(u){
+  const prev=state.users.find(x=>x.id===u.id);
+  if(prev)Object.assign(prev,u,{seen:prev.seen||[],extraPhotos:prev.extraPhotos});else state.users.push(u);
+  state.user={id:u.id};vbSaveLocal();vbSig=vbSigOf(currentUser());
+}
+function vbRoute(){
+  const cu=currentUser();if(!cu)return;
+  if(cu.onboarded){enterApp()}else{onboardingStep=1;renderOnboarding();showOnly("onboardingPage")}
+}
+async function vbAfterAuth(authUser){
+  try{vbMergeLocal(await vbLoadProfile(authUser));vbRoute();vbBeat()}
+  catch(e){console.error(e);toast("Signed in, but your profile could not be loaded: "+(e.message||e))}
+}
+async function vibeitySignUp(email,password,name,error,success){
+  const {data,error:err}=await vibeitySupabase.auth.signUp({email,password,options:{data:{name},emailRedirectTo:location.origin+location.pathname}});
+  if(err){error(err.message);return}
+  if(data.session&&data.user){success("Account created. Setting up your profile…");await vbAfterAuth(data.user)}
+  else success("Account created. Check your email, click the confirmation link, then log in.");
+}
+async function vibeitySignIn(email,password,error){
+  const {data,error:err}=await vibeitySupabase.auth.signInWithPassword({email,password});
+  if(err){error(err.message&&/confirm/i.test(err.message)?"Please confirm your email first (check your inbox).":"Email or password is incorrect.");return}
+  await vbAfterAuth(data.user);
+}
+window.vbUsernameTaken=async name=>{
+  if(!vbOn)return false;
+  try{const {data,error}=await vibeitySupabase.rpc("username_available",{p_username:name});return !error&&data===false}catch{return false}
+};
+
+function vbSchedulePush(){
+  if(!vbOn||!state.user||vbIsDemo(state.user.id))return;
+  clearTimeout(vbTimer);vbTimer=setTimeout(vbPush,400);
+}
+async function vbPush(){
+  if(vbBusy){vbSchedulePush();return}
+  const u=currentUser();if(!u||vbIsDemo(u.id))return;
+  if(vbSigOf(u)===vbSig)return;
+  vbBusy=true;
+  try{
+    const {data:{session}}=await vibeitySupabase.auth.getSession();
+    if(!session||session.user.id!==u.id)return;
+    let photoUrl=null;
+    if(u.photo&&u.photo.startsWith("data:")){
+      const blob=await (await fetch(u.photo)).blob(),path=`${u.id}/avatar.jpg`;
+      const up=await vibeitySupabase.storage.from("avatars").upload(path,blob,{upsert:true,contentType:blob.type||"image/jpeg",cacheControl:"3600"});
+      if(up.error)throw up.error;
+      photoUrl=vibeitySupabase.storage.from("avatars").getPublicUrl(path).data.publicUrl+"?v="+Date.now();
+      u.photo=photoUrl;vbSaveLocal();
+    }else if(u.photo&&/^https?:/.test(u.photo))photoUrl=u.photo;
+    const row={id:u.id,name:u.name||null,username:u.username?u.username.toLowerCase():null,gender:u.gender||null,intent:u.intent||null,profession:u.profession||null,state:u.state||null,city:u.city||null,bio:u.bio||null,photo_url:photoUrl,privacy:u.privacy||"public",onboarded:!!u.onboarded};
+    if(u.prefs)row.prefs=u.prefs;
+    const {error}=await vibeitySupabase.from("profiles").upsert(row,{onConflict:"id"});
+    if(error){
+      if(error.code==="23505")toast("That username was just taken. Choose another in Settings → Account.");
+      else{console.error(error);toast("Couldn't save to the cloud: "+error.message)}
+      return;
+    }
+    vbSig=vbSigOf(u);
+  }catch(e){console.error(e);toast("Couldn't save your profile. Check your internet connection.")}
+  finally{vbBusy=false}
+}
+function vbBeat(){
+  if(!vbOn||!state.user||vbIsDemo(state.user.id)||document.hidden)return;
+  vibeitySupabase.from("profiles").update({last_seen_at:new Date().toISOString()}).eq("id",state.user.id).then(()=>{},()=>{});
+}
+async function vbInit(){
+  if(!vbOn)return;
+  try{
+    const {data:{session}}=await vibeitySupabase.auth.getSession();
+    const cu=state.user&&currentUser();
+    if(cu&&vbIsDemo(cu.id))return;                       // demo mode is separate
+    if(session){
+      if(!cu||cu.id!==session.user.id||!cu.onboarded){
+        const u=await vbLoadProfile(session.user);vbCleanDemo();vbMergeLocal(u);
+        const onWelcome=!$("welcomePage").classList.contains("hidden")||!$("authPage").classList.contains("hidden");
+        if(!$("splash")&&onWelcome)vbRoute();
+      }else vbSig=vbSigOf(cu);
+      vbBeat();
+    }else if(cu){                                         // stale local account with no cloud session: ask to log in
+      state.user=null;vbSaveLocal();
+      if(!$("appShell").classList.contains("hidden")){$("bottomNav").classList.add("hidden");showOnly("welcomePage")}
+    }
+  }catch(e){console.error(e)}
+}
+setInterval(vbBeat,60000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)vbBeat()});
+vbInit();
 </script>
 </body>
 </html>
