@@ -554,6 +554,7 @@ function closeTechServices(){$("techServiceOptions").classList.add("hidden");$("
     chat("tunde",[["tunde","Bro, can you do the cover art for my EP?",26*H],["me","Of course. What's the vibe?",26*H-5*M],["tunde","Dark, gold, a bit of Ibadan skyline",25*H],["me","Say less. I'll send drafts tomorrow 😎",25*H-2*M]]);
     chat("zainab",[["me","Your golden hour shots are unreal 😍",8*H],["zainab","Aww thanks! We should collab on a shoot",7*H],["zainab","Saturday works for me?",7*H-1*M]]);
     chat("ife",[["ife","Morning run tomorrow at 6am? 🏃",2*D],["me","I'll try 😅",2*D-10*M]]);
+    const ac=state.chats.find(c=>c.members.includes(id.amaka)&&c.members.includes(me));if(ac)ac.messages.push({id:makeId(),from:id.amaka,kind:"image",viewOnce:true,url:demoPoster("Sneak peek","👀",3),openedBy:[],text:"",createdAt:now-15*M});
 
     state.announcements.unshift({id:makeId(),title:"Welcome to VIBEITY 🎉",body:"This is sample content so you can preview the app. Official announcements from BhigC will show up here.",createdAt:now,demo:true});
     state.announcements.unshift({id:makeId(),title:"Need a logo or website? 🎨",body:"Tap Explore, then Need a Tech Service, to message BhigC on WhatsApp.",createdAt:now,demo:true});
@@ -565,6 +566,8 @@ function closeTechServices(){$("techServiceOptions").classList.add("hidden");$("
     grp("💻","Tech Naija","Developers, designers and founders building in Nigeria.",["chidi","me","bola","tunde"],[["chidi","Anyone using Supabase for their side project?",9*H],["me","Yes! Building Vibeity on it soon 🚀",8*H]]);
     grp("💪","Fitness Squad","Daily workouts, healthy eating and accountability.",["ife","amaka","zainab","tosin"],[["ife","Morning run at 6am. Who's joining?",3*H]]);
     grp("🎧","Music Lovers","Share your playlists and discover new sounds.",["tunde","halima","kemi","emeka","sade","zainab","tosin","bola"],[["tunde","Dropping my new beat on Friday 🎶",2*H]]);
+    const gi=state.groups.find(g=>g.name==="Ibadan Creatives");if(gi){gi.photo=demoPoster("Ibadan Creatives","🎨",0);gi.admins=[id.tunde]}
+    const gt=state.groups.find(g=>g.name==="Tech Naija");if(gt){gt.addPolicy="admins";gt.admins=[id.chidi]}
     state.user={id:me};
     activeChatId=null;
     saveState();
@@ -624,7 +627,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
   function closeSheet(){$("uiSheet").classList.add("hidden");cctx=null;syncLock()}
   function openComposer(){$("composerSheet").classList.remove("hidden");syncLock()}
   function closeComposer(){$("composerSheet").classList.add("hidden");syncLock()}
-  function closeViewer(){const v=$("viewerBody").querySelector("video");if(v)v.pause();$("viewerBody").innerHTML="";$("viewer").classList.add("hidden");syncLock()}
+  function closeViewer(){document.querySelectorAll("#viewerBody video").forEach(v=>v.pause());if(viewerObs){viewerObs.disconnect();viewerObs=null}$("viewerBody").innerHTML="";$("viewer").classList.add("hidden");syncLock();if(curPage==="profile")renderOwnTimeline()}
   $("uiSheetClose").onclick=closeSheet;$("viewerClose").onclick=closeViewer;$("composerClose").onclick=closeComposer;$("openComposer").onclick=openComposer;
   $("uiBackdrop").onclick=()=>{closeSheet();closeComposer()};
   document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!$("uiSheet").classList.contains("hidden"))closeSheet();else if(!$("composerSheet").classList.contains("hidden"))closeComposer();else if(!$("viewer").classList.contains("hidden"))closeViewer()});
@@ -665,32 +668,43 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     if(!posts.length){feed.innerHTML=`<div class="reel reel-empty"><div><h3>You're all caught up ✨</h3><p>You've watched everything for now. New posts show up here as people share them.</p><button class="btn btn-primary" id="showSeen">Watch again from the start</button></div></div>`;$("showSeen").onclick=()=>{u.seen=[];saveState();renderFeed()};return}
     feed.innerHTML=posts.map(reelHTML).join("");feed.scrollTop=0;watchReels(feed);
   };
-  function openViewer(pid){
-    const p=postById(pid);if(!p)return;const a=userById(p.userId);if(a&&!canView(a)){toast("This account is private.");return}
-    $("viewerBody").innerHTML=reelHTML(p);$("viewer").classList.remove("hidden");syncLock();
-    const v=$("viewerBody").querySelector("video");if(v)v.play().catch(()=>{});
-    setTimeout(()=>{if(!$("viewer").classList.contains("hidden"))markSeen(pid)},900);
+  let viewerObs=null;
+  function openViewer(pid,ids){
+    const list=(ids&&ids.length?ids:[pid]).map(postById).filter(p=>p&&canView(userById(p.userId)));
+    if(!list.length){toast("User account is private.");return}
+    const start=Math.max(0,list.findIndex(p=>p.id===pid)),body=$("viewerBody");
+    body.innerHTML=`<div class="viewer-scroll">${list.map(reelHTML).join("")}</div>`;
+    $("viewer").classList.remove("hidden");syncLock();
+    const sc=body.firstElementChild;requestAnimationFrame(()=>{sc.scrollTop=start*sc.clientHeight});
+    if(viewerObs)viewerObs.disconnect();
+    viewerObs=new IntersectionObserver(es=>es.forEach(en=>{const el=en.target,id=el.dataset.post,v=el.querySelector("video");
+      if(en.isIntersecting&&en.intersectionRatio>=.6){if(v)v.play().catch(()=>{});setTimeout(()=>{if(!$("viewer").classList.contains("hidden")&&el.isConnected)markSeen(id)},900)}else if(v)v.pause()}),{root:sc,threshold:[0,.6,1]});
+    sc.querySelectorAll(".reel").forEach(r=>viewerObs.observe(r));
   }
 
   /* ---------- comments ---------- */
   let cctx=null;
   function findComment(p,id){for(const c of p.comments){if(c.id===id)return{c,parent:null};for(const r of c.replies)if(r.id===id)return{c:r,parent:c}}return null}
+  const CI={heart:'<svg viewBox="0 0 24 24"><path d="M12 21l-1.4-1.3C5.6 15.2 2.5 12.4 2.5 9A4.9 4.9 0 0 1 7.4 4c1.7 0 3.3.8 4.6 2.2C13.3 4.8 14.9 4 16.6 4a4.9 4.9 0 0 1 4.9 5c0 3.4-3.1 6.2-8.1 10.7L12 21z"/></svg>',reply:'<svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h9a7 7 0 0 1 7 7v1"/></svg>',save:'<svg viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>',share:'<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>'};
   function commentHTML(c,reply){
     const u=currentUser(),a=userById(c.userId)||{id:"",name:"VIBEITY Member",username:"member"},liked=c.likes.includes(u.id),saved=c.saves.includes(u.id);
-    return `<div class="cm ${reply?"cm-reply":""}" data-cid="${c.id}"><button class="cm-av" data-profile="${a.id}">${avatarMarkup(a)}</button><div class="cm-body"><div class="cm-top"><strong>${esc(a.name||a.username)}</strong><small>${formatTime(c.createdAt)}</small></div><div class="cm-text">${esc(c.text)}</div><div class="cm-actions"><button data-cact="like" class="${liked?"on":""}">${liked?"♥":"♡"} ${c.likes.length||""}</button><button data-cact="reply">Reply</button><button data-cact="save" class="${saved?"on":""}">${saved?"Saved":"Save"}</button><button data-cact="share">Share</button></div>${!reply&&c.replies.length?`<div class="cm-replies">${c.replies.map(r=>commentHTML(r,true)).join("")}</div>`:""}</div></div>`;
+    return `<div class="cm ${reply?"cm-reply":""}" data-cid="${c.id}"><button class="cm-av" data-profile="${a.id}">${avatarMarkup(a)}</button><div class="cm-body"><div class="cm-top"><strong>${esc(a.name||a.username)}</strong><small>${formatTime(c.createdAt)}</small></div>${c.text?`<div class="cm-text">${esc(c.text)}</div>`:""}${c.img?`<button class="cm-img" type="button" data-lightbox="${c.img}" aria-label="Open photo"><img src="${c.img}" alt="Comment photo"></button>`:""}<div class="cm-actions"><button data-cact="like" class="${liked?"on":""}" aria-label="Like">${CI.heart}<span>${c.likes.length||""}</span></button><button data-cact="reply" aria-label="Reply">${CI.reply}</button><button data-cact="save" class="${saved?"on":""}" aria-label="${saved?"Unsave":"Save"} comment">${CI.save}</button><button data-cact="share" aria-label="Share comment">${CI.share}</button></div>${!reply&&c.replies.length?`<div class="cm-replies">${c.replies.map(r=>commentHTML(r,true)).join("")}</div>`:""}</div></div>`;
   }
   function renderComments(){const p=postById(cctx.pid),body=$("uiSheetBody"),keep=body.scrollTop,n=countComments(p);$("uiSheetTitle").textContent=`${n} comment${n===1?"":"s"}`;body.innerHTML=p.comments.length?p.comments.map(c=>commentHTML(c,false)).join(""):`<div class="empty" style="margin-top:12px">No comments yet. Be the first!</div>`;body.scrollTop=keep}
-  function openComments(pid){cctx={pid,replyTo:null};openSheet("Comments","",`<div id="replyingTo" class="replying hidden"></div><div class="c-compose"><input id="commentInput" maxlength="500" placeholder="Add a comment…"><button class="btn btn-primary" id="commentSend">Post</button></div>`);renderComments()}
+  function openComments(pid){cctx={pid,replyTo:null,img:""};openSheet("Comments","",`<div id="replyingTo" class="replying hidden"></div><div id="cmPreview" class="cm-preview hidden"></div><div class="c-compose"><button class="cm-attach" id="cmAttach" type="button" aria-label="Add a photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2"/><path d="M21 16l-5-4-7 7"/></svg></button><input type="file" id="cmFile" accept="image/*" class="hidden"><input id="commentInput" maxlength="500" placeholder="Add a comment…"><button class="btn btn-primary" id="commentSend">Post</button></div>`);renderComments()}
   function sendComment(){
-    if(!cctx)return;const p=postById(cctx.pid),u=currentUser(),inp=$("commentInput"),text=inp.value.trim();if(!text)return;
+    if(!cctx)return;const p=postById(cctx.pid),u=currentUser(),inp=$("commentInput"),text=inp.value.trim();if(!text&&!cctx.img)return;
     if(text.length>500){toast("Comments are limited to 500 characters.");return}
-    const c=normComment({userId:u.id,text,createdAt:Date.now()});
+    const c=normComment({userId:u.id,text,img:cctx.img||"",createdAt:Date.now()});
     const parent=cctx.replyTo&&p.comments.find(x=>x.id===cctx.replyTo);
     if(parent)parent.replies.push(c);else p.comments.unshift(c);
-    inp.value="";cctx.replyTo=null;showEl("replyingTo",false);saveState();renderComments();refreshReel(p,"comment");
+    inp.value="";cctx.replyTo=null;cctx.img="";cmPreview();showEl("replyingTo",false);saveState();renderComments();refreshReel(p,"comment");
   }
   $("uiSheetFoot").addEventListener("click",e=>{if(e.target.closest("#commentSend"))sendComment();if(e.target.closest("#cancelReply")){cctx.replyTo=null;showEl("replyingTo",false)}});
   $("uiSheetFoot").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="commentInput"){e.preventDefault();sendComment()}});
+  function cmPreview(){const p=$("cmPreview");if(!p)return;if(cctx&&cctx.img){p.innerHTML=`<img src="${cctx.img}" alt="Selected photo"><button id="cmRemoveImg" type="button" aria-label="Remove photo">✕</button>`;p.classList.remove("hidden")}else{p.innerHTML="";p.classList.add("hidden")}}
+  $("uiSheetFoot").addEventListener("click",e=>{if(e.target.closest("#cmAttach")){$("cmFile").click();return}if(e.target.closest("#cmRemoveImg")){cctx.img="";cmPreview()}});
+  $("uiSheetFoot").addEventListener("change",async e=>{if(e.target.id==="cmFile"&&e.target.files[0]&&cctx){try{cctx.img=await compressImg(e.target.files[0],900,.78);cmPreview()}catch(err){toast("Couldn't use that image.")}e.target.value=""}});
   $("uiSheetBody").addEventListener("click",e=>{
     const b=e.target.closest("[data-cact]");if(!b||!cctx)return;const cm=b.closest(".cm"),p=postById(cctx.pid),f=findComment(p,cm.dataset.cid);if(!f)return;const u=currentUser(),k=b.dataset.cact;
     if(k==="like"){toggle(f.c.likes,u.id);saveState();renderComments()}
@@ -727,7 +741,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     const act=e.target.closest("[data-act]");
     if(act){const reel=act.closest(".reel"),p=reel&&postById(reel.dataset.post),u=currentUser();if(!p||!u)return;const k=act.dataset.act;
       if(k==="like"){toggle(p.likes,u.id);saveState();refreshReel(p,"like")}
-      else if(k==="save"){const on=toggle(p.saves,u.id);saveState();refreshReel(p,"save");toast(on?"Saved. Watch it again in Profile → Saved.":"Removed from saved.")}
+      else if(k==="save"){const on=toggle(p.saves,u.id);saveState();refreshReel(p,"save");toast(on?"Saved. Watch it again in Profile → Saved.":"Removed from saved.");if(curPage==="profile")renderOwnTimeline()}
       else if(k==="comment")openComments(p.id);
       else if(k==="share")openShare({type:"post",pid:p.id});
       return}
@@ -738,7 +752,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     const prof=e.target.closest("[data-profile]");
     if(prof&&prof.dataset.profile){e.preventDefault();openProfilePage(prof.dataset.profile);return}
     const op=e.target.closest("[data-open-post]");
-    if(op){openViewer(op.dataset.openPost);return}
+    if(op){const box=op.closest(".post-grid,.up-photos");openViewer(op.dataset.openPost,box?[...box.querySelectorAll("[data-open-post]")].map(x=>x.dataset.openPost):null);return}
   });
   document.addEventListener("dblclick",e=>{
     const media=e.target.closest(".reel-media");if(!media||e.target.closest("button"))return;const reel=media.closest(".reel"),p=postById(reel.dataset.post),u=currentUser();if(!p||!u)return;
@@ -826,7 +840,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     const actions=friend?`<button class="btn btn-primary" data-uact="msg" data-uid="${u.id}">Message</button><button class="btn btn-outline" data-uact="unfriend" data-uid="${u.id}">Unfriend</button>`:inc?`<button class="d-btn nope" data-uact="decline" data-uid="${u.id}" aria-label="Decline">${X_SVG}</button><button class="d-btn like" data-uact="accept" data-uid="${u.id}" aria-label="Accept">${H_SVG}</button>`:sent?`<button class="btn btn-outline" disabled>Request sent</button>`:`<button class="d-btn nope" id="upPass" aria-label="Pass">${X_SVG}</button><button class="d-btn like" data-uact="add" data-uid="${u.id}" aria-label="Like">${H_SVG}</button><button class="d-btn star" data-uact="add" data-super="1" data-uid="${u.id}" aria-label="Super like">${S_SVG}</button>`;
     userSec.innerHTML=`<div class="up-hero">${hero}<div class="up-hero-shade"></div><button class="up-back" id="upBack" aria-label="Back">←</button>${u.online?`<span class="sc-online">Online</span>`:""}</div>
     <div class="up-body"><h2 class="up-name">${esc(u.name||u.username)}${u.verified?VER_SVG:""}</h2><div class="up-sub">${esc(sub)}</div>
-    ${view?`<div class="up-chips">${chips}</div>${u.bio?`<p class="up-bio">${esc(u.bio)}</p>`:""}<div class="up-stats"><div><b>${posts.length}</b><span>Posts</span></div><div><b>${state.friends.filter(f=>f.a===u.id||f.b===u.id).length}</b><span>Friends</span></div></div>${photos.length?`<div class="up-photos-head"><h3>Photos</h3><span>View All (${photos.length})</span></div><div class="up-photos">${photos.slice(0,3).map(p=>`<button data-open-post="${p.id}" aria-label="Open photo"><img src="${p.media}" alt=""></button>`).join("")}</div>`:""}`:`<div class="panel lock"><div class="lock-ico">🔒</div><h3>This account is private</h3><p>Only friends can see ${esc((u.name||u.username).split(" ")[0])}'s posts and details. Send a friend request to connect.</p></div>`}
+    ${view?`<div class="up-chips">${chips}</div>${u.bio?`<p class="up-bio">${esc(u.bio)}</p>`:""}<div class="up-stats"><button class="up-stat" type="button" data-ustat="posts"><b>${posts.length}</b><span>Posts</span></button><button class="up-stat" type="button" data-ustat="friends"><b>${state.friends.filter(f=>f.a===u.id||f.b===u.id).length}</b><span>Friends</span></button></div>${photos.length?`<div class="up-photos-head"><h3>Photos</h3><button class="up-viewall" type="button" data-ustat="photos">View All (${photos.length})</button></div><div class="up-photos">${photos.slice(0,3).map(p=>`<button data-open-post="${p.id}" aria-label="Open photo"><img src="${p.media}" alt=""></button>`).join("")}</div>`:""}`:`<div class="up-stats"><button class="up-stat" type="button" data-ustat="posts"><b>🔒</b><span>Posts</span></button><button class="up-stat" type="button" data-ustat="friends"><b>🔒</b><span>Friends</span></button></div><div class="panel lock"><div class="lock-ico">🔒</div><h3>This account is private</h3><p>Only friends can see ${esc((u.name||u.username).split(" ")[0])}'s posts and details. Send a friend request to connect.</p></div>`}
     <div class="up-actions-row">${actions}</div>
     ${view?`<h3 class="tl-title">Posts</h3>${posts.length?gridOf(posts):empty("No posts yet.")}`:""}</div>`;
   }
@@ -857,7 +871,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     $("chatBack").onclick=()=>{activeChatId=null;renderChats();renderChatWindow()};
     $("chatMenu").onclick=()=>$("chatTools").classList.toggle("open");
   };
-  window.UI={openSheet,closeSheet,startChat,openProfilePage,myFriends,chatWith,bgFor,canView,fmt,pendingBetween,getPage:()=>curPage};
+  window.UI={openSheet,closeSheet,startChat,openProfilePage,myFriends,chatWith,bgFor,canView,fmt,pendingBetween,openViewer,getViewed:()=>viewedProfile,getPage:()=>curPage};
 })();
 </script>
 <script>
@@ -900,8 +914,8 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
   settingsSec.addEventListener("click",e=>{
     if(e.target.closest("#setBack")){showPage("profile");return}
     const b=e.target.closest("[data-set]");if(!b)return;const k=b.dataset.set;
-    ({account:accountSheet,notify:notifySheet,privacy:privacySheet,terms:termsSheet,
-      help:()=>link(LINKS.whatsapp+"?text="+encodeURIComponent("Hi BhigC, I need help with VIBEITY.")),
+    ({account:accountSheet,notify:notifySheet,privacy:privacySheet,terms:()=>window.vbLegal("terms"),
+      help:()=>window.vbHelp(),
       market:()=>link(LINKS.marketplace),tech:()=>{showPage("explore");setTimeout(openTechServices,150)},comm:goComm,
       ig:()=>link(LINKS.instagram),tt:()=>link(LINKS.tiktok),fb:()=>link(LINKS.facebook),wa:()=>link(LINKS.whatsapp),
       logout:()=>$("logoutProfile").click(),exitdemo:()=>$("exitDemo").click()})[k]?.();
@@ -918,7 +932,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
   /* ---------- communities / groups ---------- */
   let commTab="discover",gctx=null;
   const mine=()=>state.groups.filter(g=>g.members.includes(meId()));
-  function groupRow(g){const m=g.members.includes(meId());return `<div class="grp-row"><div class="grp-ico" style="background:${U.bgFor(g.id)}">${g.emoji||"👥"}</div><div class="grp-info"><b>${esc(g.name)}</b><small>${g.members.length} member${g.members.length===1?"":"s"}${g.desc?" · "+esc(g.desc):""}</small></div><button class="small-btn" data-grp="${m?"open":"join"}" data-gid="${g.id}">${m?"Open":"Join"}</button></div>`}
+  function groupRow(g){const m=g.members.includes(meId());return `<div class="grp-row"><div class="grp-ico" style="background:${U.bgFor(g.id)}">${g.photo?`<img src="${g.photo}" alt="">`:(g.emoji||"👥")}</div><div class="grp-info"><b>${esc(g.name)}</b><small>${g.members.length} member${g.members.length===1?"":"s"}${g.desc?" · "+esc(g.desc):""}</small></div><button class="small-btn" data-grp="${m?"open":"join"}" data-gid="${g.id}">${m?"Open":"Join"}</button></div>`}
   function renderCommunities(){
     const my=mine(),disc=state.groups.filter(g=>!g.members.includes(meId())),list=commTab==="mine"?my:disc;
     commSec.innerHTML=`<div class="page-head"><div><button class="text-btn back-btn" id="commBack">← Explore</button><h1 class="page-title">Communities</h1><p class="page-lead">Join groups that match your vibe.</p></div><button class="btn btn-primary create-group-btn" data-creategroup>＋ Create group</button></div>
@@ -930,13 +944,13 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     body.innerHTML=`<div class="g-meta"><span>👥 ${g.members.length} member${g.members.length===1?"":"s"}</span><button class="g-leave" data-gleave>Leave group</button></div><div class="g-msgs">${g.messages.length?g.messages.map(m=>{const mine=m.from===meId(),a=userById(m.from);return `<div class="gm ${mine?"mine":""}">${mine?"":`<b class="g-sender">${esc(a?.name||"Member")}</b>`}${esc(m.text)}<small>${clock(m.createdAt)}</small></div>`}).join(""):empty("No messages yet. Say hello! 👋")}</div>`;
     body.scrollTop=body.scrollHeight;
   }
-  function openGroup(gid){const g=state.groups.find(x=>x.id===gid);if(!g)return;gctx=gid;U.openSheet(`${g.emoji||"👥"} ${g.name}`,"",`<div class="c-compose"><input id="gInput" maxlength="500" placeholder="Message the group…"><button class="btn btn-primary" id="gSend">Send</button></div>`);renderGroupBody()}
+  function openGroup(gid){window.vbOpenGroup&&window.vbOpenGroup(gid)}
   function sendGroupMsg(){const g=state.groups.find(x=>x.id===gctx),inp=$("gInput");if(!g||!inp)return;const t=inp.value.trim();if(!t)return;g.messages.push({id:makeId(),from:meId(),text:t,createdAt:Date.now()});inp.value="";saveState();renderGroupBody()}
   let cgEmoji="🎨";
   function openCreateGroup(){cgEmoji="🎨";const em=["🎨","💻","🎧","🍛","💪","📚","⚽","✈️","💼","🎮"];U.openSheet("Create a group",`<div class="sheet-body-pad"><label class="field"><span>Group name</span><input id="cgName" maxlength="40" placeholder="e.g. Ibadan Creatives"></label><label class="field"><span>Description</span><textarea id="cgDesc" maxlength="140" rows="3" placeholder="What is this group about?"></textarea></label><div class="field"><span>Pick an icon</span><div class="emoji-pick">${em.map((x,i)=>`<button type="button" class="${i?"":"on"}" data-cgemoji="${x}">${x}</button>`).join("")}</div></div></div>`,`<div class="share-foot"><button class="btn btn-primary btn-full" id="cgCreate" style="margin:0">Create group</button></div>`)}
   function createGroup(){const name=$("cgName").value.trim();if(name.length<3){toast("Give your group a name (at least 3 characters).");return}
     const g={id:makeId(),emoji:cgEmoji,name,desc:$("cgDesc").value.trim(),members:[meId()],messages:[],createdBy:meId(),createdAt:Date.now()};state.groups.unshift(g);saveState();U.closeSheet();commTab="mine";showPage("communities");openGroup(g.id);toast("Group created.")}
-  document.addEventListener("click",e=>{if(e.target.closest("#createGroupTop,[data-creategroup]"))openCreateGroup()});
+  document.addEventListener("click",e=>{if(e.target.closest("#createGroupTop,[data-creategroup]"))window.vbCreateGroup()});
   commSec.addEventListener("click",e=>{
     if(e.target.closest("#commBack")){showPage("explore");return}
     const t=e.target.closest("[data-ctab]");if(t){commTab=t.dataset.ctab;renderCommunities();return}
@@ -982,7 +996,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
   const likesMe=x=>state.requests.some(r=>r.status==="pending"&&r.from===x.id&&r.to===meId());
   function deckQueue(){
     const u=currentUser(),pass=u.passed||[];
-    let l=state.users.filter(x=>x.id!==u.id&&!isFriend(u.id,x.id)&&!pass.includes(x.id)&&!state.requests.some(r=>r.status==="pending"&&r.from===u.id&&r.to===x.id));
+    let l=state.users.filter(x=>x.id!==u.id&&!isFriend(u.id,x.id)&&!(state.blocked||[]).some(b=>b.from===u.id&&b.to===x.id)&&!pass.includes(x.id)&&!state.requests.some(r=>r.status==="pending"&&r.from===u.id&&r.to===x.id));
     if(deckFilter==="online")l=l.filter(x=>x.online);else if(deckFilter!=="all")l=l.filter(x=>(x.intent||"friendship")===deckFilter);
     return l.sort((a,b)=>(likesMe(b)-likesMe(a))||(((b.intent||"")===u.intent)-((a.intent||"")===u.intent))||(a.name||"").localeCompare(b.name||""));
   }
@@ -1052,7 +1066,7 @@ function clock(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",min
     profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>'};
   const L={reels:"Reels",friends:"Discover",chats:"Messages",explore:"Explore",profile:"Profile"};
   document.querySelectorAll(".nav-item").forEach(b=>{const k=b.dataset.page;b.innerHTML=`<span class="nav-icon">${I[k]}${k==="chats"?'<i class="nav-badge hidden" id="navBadge"></i>':""}</span><span>${L[k]}</span>`});
-  function unreadTotal(){const me=state.user?.id;if(!me)return 0;return state.chats.filter(c=>c.members.length===2&&c.members.includes(me)).reduce((n,c)=>{const r=c.readAt?.[me]||0;return n+c.messages.filter(m=>m.from!==me&&m.createdAt>r).length},0)}
+  function unreadTotal(){const me=state.user?.id;if(!me)return 0;return state.chats.filter(c=>c.members.length===2&&c.members.includes(me)).reduce((n,c)=>{if(c.muted?.[me])return n;const r=Math.max(c.readAt?.[me]||0,c.clearedAt?.[me]||0);return n+c.messages.filter(m=>m.from!==me&&m.createdAt>r&&m.kind!=="system").length},0)}
   function badge(){const n=unreadTotal(),b=document.getElementById("navBadge");if(!b)return;b.textContent=n>9?"9+":n;b.classList.toggle("hidden",!n)}
   const _sp=showPage;showPage=function(p){_sp(p);badge()};
   setInterval(badge,1500);
@@ -1256,6 +1270,476 @@ async function vbNotifyPermission(u,buttons){
   };
   ["logoutProfile","logoutTop"].forEach(i=>{const b=document.getElementById(i);if(b)b.addEventListener("click",()=>{window.__authDefault="login";setTimeout(()=>{window.__authDefault="signup"},1500)},true)});
 })();
+</script>
+<script>
+/* ===== VIBEITY: chat v2, group chat v2, calls, help and legal ===== */
+function compressImg(file,max,q){return new Promise((res,rej)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{const k=Math.min(1,(max||1080)/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL("image/jpeg",q||.8))};img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("bad image"))};img.src=url})}
+function compressBlob(file,max,q){return new Promise((res,rej)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{const k=Math.min(1,(max||1280)/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);c.toBlob(b=>b?res(b):rej(new Error("blob")),"image/jpeg",q||.82)};img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("bad image"))};img.src=url})}
+(function(){
+  const U=window.UI,esc=escapeHTML,me=()=>state.user?.id;
+  const SUPPORT_EMAIL="collinsolukoju@gmail.com",SUPPORT_WA="https://wa.me/2348142688223";
+  const LEGAL={"terms": {"title": "Terms and Conditions", "html": "<p class=\"lg-date\">Last updated: 19 October 2026<\/p><h3>1. Welcome and acceptance<\/h3><p>VIBEITY (the “App”, “we”, “us”) is a social and dating platform operated by BhigC Graphix (trading as VIBEITY), Nigeria. It lets people share short posts and reels, discover new people, match, chat, make voice calls and join groups.<\/p><p>By creating an account or using the App you agree to these Terms and Conditions, our Data Policy and our Community Guidelines. If you do not agree, please do not use VIBEITY.<\/p><h3>2. Who can use VIBEITY<\/h3><p>You must be at least 18 years old. VIBEITY is not for anyone under 18, and we will delete accounts we believe belong to minors.<\/p><p>You must provide accurate information, use only your own account, and be legally able to enter this agreement. You may not use VIBEITY if you have been banned from it before or if you are prohibited by law from using it.<\/p><h3>3. Your account<\/h3><p>You are responsible for your password and for everything that happens on your account. Tell us straight away at collinsolukoju@gmail.com if you think someone else has accessed it.<\/p><p>Your username must be unique and must not impersonate another person or brand. We may change or remove usernames that break these Terms.<\/p><p>One person, one account. Fake, bot or duplicate accounts may be removed.<\/p><h3>4. What VIBEITY is and is not<\/h3><p>VIBEITY helps people meet. We do not guarantee that you will find a match, a friend or a relationship, and we do not run background or identity checks on every user. A verified tick means we have checked the account in the way described in the App at that time. It is not a promise about a person’s character or safety.<\/p><p>Be careful when meeting people from the internet. Meet in public places, tell someone you trust, and never send money to someone you have not met in person.<\/p><h3>5. Your content and our licence<\/h3><p>You own the posts, photos, videos, comments, voice notes, messages and group photos you upload (“Your Content”).<\/p><p>To run the App you give us a non-exclusive, worldwide, royalty-free licence to host, store, display, copy and process Your Content only as needed to operate, secure and improve VIBEITY and to show it to the people you choose (for example, followers, friends and group members, depending on your privacy setting). This licence ends when you delete the content or your account, except for backups that expire on a normal schedule and content other people have already shared or saved.<\/p><p>You promise that you have the right to upload what you post and that it does not break any law or anyone else’s rights.<\/p><h3>6. Public and private accounts<\/h3><p>If your account is public, other users can see your profile details, posts, photos and friends list. If your account is private, only your friends can see your posts and your friends list. You can change this at any time in Settings → Privacy.<\/p><p>Likes, saves and shares on a post are shown to others as numbers only. We do not show who saved or shared a post.<\/p><h3>7. Messages, calls and media<\/h3><p>Chats, voice notes, photos, videos, files and voice calls are for private communication between the people involved. Do not use them to harass, threaten, scam or exploit anyone.<\/p><p>“View once” photos, videos and voice notes are designed to disappear after they are opened. We cannot stop someone from taking a screenshot, screen recording or photographing a screen. Only send view-once content to people you trust, and never take or share someone’s private content without their permission.<\/p><p>Group admins can change group settings, such as who can add members. Group chats are visible to every member of the group.<\/p><h3>8. Rules of conduct<\/h3><p>You must follow our Community Guidelines. In short, you must not: harass, bully or threaten anyone; post hate speech; share sexual or explicit content, nudity or anything involving minors; promote violence, self-harm or illegal activity; scam, spam or advertise without permission; impersonate others; share other people’s private information; use bots or scrapers; try to hack, overload or reverse-engineer VIBEITY; or upload viruses or harmful code.<\/p><p>Breaking the law while using VIBEITY, including Nigerian laws on cybercrime, may be reported to the authorities.<\/p><h3>9. Reporting, blocking and moderation<\/h3><p>You can block a user at any time from a chat. To report a person, a post, a comment or a group, email collinsolukoju@gmail.com with the username and a short description. We review reports and may warn you, remove content, limit features, suspend or permanently ban accounts.<\/p><p>We may remove any content or account that we reasonably believe breaks these Terms or puts people at risk, with or without notice.<\/p><h3>10. Free service and changes<\/h3><p>VIBEITY is currently free to use. We may add paid features in future (for example boosts or subscriptions). If we do, we will show the price and terms clearly before you pay.<\/p><p>We may add, change or remove features, and we may update these Terms. If we make important changes we will tell you in the App or by email. Continuing to use VIBEITY after a change means you accept it.<\/p><h3>11. Intellectual property<\/h3><p>The VIBEITY name, logo, design, text and software belong to BhigC Graphix (trading as VIBEITY) or its licensors. You may not copy, sell or reuse them without written permission.<\/p><p>If you believe content on VIBEITY copies your work, email collinsolukoju@gmail.com with proof of ownership and a link to the content.<\/p><h3>12. Third-party services and links<\/h3><p>VIBEITY relies on services such as cloud hosting and storage providers. It may link to other websites, including our other BhigC services. We are not responsible for other websites or what they do with your information.<\/p><h3>13. Suspension and ending your account<\/h3><p>You can stop using VIBEITY or ask us to delete your account at any time by emailing collinsolukoju@gmail.com. We may suspend or end your account if you break these Terms, create risk or harm for others, or if we are required to by law.<\/p><p>When an account is deleted, we remove its profile and content within a reasonable time, subject to the retention rules in the Data Policy.<\/p><h3>14. Disclaimers<\/h3><p>VIBEITY is provided “as is” and “as available”. We work hard to keep it safe and running, but we cannot promise that it will always be available, error-free or secure, or that other users are who they say they are.<\/p><p>We are not responsible for what users say or do, on or off VIBEITY, including offline meetings.<\/p><h3>15. Limit of our responsibility<\/h3><p>To the fullest extent allowed by Nigerian law, BhigC Graphix (trading as VIBEITY) is not liable for indirect, incidental or consequential losses, loss of data or profit, or harm caused by other users’ conduct. Nothing in these Terms limits liability that cannot lawfully be limited, such as for fraud or for death or personal injury caused by negligence.<\/p><h3>16. Your responsibility to us<\/h3><p>You agree to cover reasonable losses we suffer because you broke these Terms or the law, or because of content you posted that infringes someone’s rights.<\/p><h3>17. Governing law and disputes<\/h3><p>These Terms are governed by the laws of the Federal Republic of Nigeria. We encourage you to contact us first at collinsolukoju@gmail.com so we can try to resolve any complaint. If we cannot, the courts of Nigeria with proper jurisdiction will decide the dispute.<\/p><h3>18. General<\/h3><p>If part of these Terms cannot be enforced, the rest still applies. If we do not enforce a rule straight away, we have not given it up. You may not transfer your account to anyone else. These Terms, the Data Policy and the Community Guidelines are the whole agreement between you and us about VIBEITY.<\/p><h3>19. Contact<\/h3><p>BhigC Graphix (trading as VIBEITY), Nigeria. Email: collinsolukoju@gmail.com.<\/p><p class=\"lg-note\">Draft for VIBEITY. Have a Nigerian lawyer review it before launch.<\/p>"}, "data": {"title": "Data Policy", "html": "<p class=\"lg-date\">Last updated: 19 October 2026<\/p><h3>1. About this policy<\/h3><p>This policy explains what personal information VIBEITY collects, why, how we protect it, and your rights. BhigC Graphix (trading as VIBEITY) is the “data controller”. We aim to follow the Nigeria Data Protection Act 2023 and guidance from the Nigeria Data Protection Commission (NDPC).<\/p><h3>2. Information we collect<\/h3><p>Information you give us: your name, email address, password (stored securely, never in plain text), gender, what you are here for (relationship or friendship), profession, state and city, bio, username, profile photo and the other details you add.<\/p><p>Content you create: posts, photos, videos, comments, likes, saves, shares, messages, voice notes, files, group photos and group activity.<\/p><p>Choices and settings: privacy setting, notification choices, blocked users, muted and pinned chats, group settings and swipe choices (who you liked, super-liked or passed).<\/p><p>Permissions you allow on your device: camera, microphone, notifications and, if you choose, location. You can turn these off at any time in your browser or phone settings.<\/p><p>Technical information: device and browser type, approximate time of use, and the “online” status shown to other users (based on when you were last active).<\/p><p>Information from others: when someone messages you, comments, shares a post with you, adds you to a group or blocks you.<\/p><h3>3. How we use your information<\/h3><p>To create and run your account, show your profile, suggest people to discover, create matches and friendships, and deliver messages, calls, posts and notifications.<\/p><p>To keep VIBEITY safe: preventing fake accounts, scams and abuse, enforcing our Terms, and responding to reports.<\/p><p>To improve the App, fix problems and understand what features people use.<\/p><p>To contact you about your account, security or important changes. We do not sell your personal information.<\/p><h3>4. Our reasons (legal bases)<\/h3><p>Contract: to provide the service you signed up for.<\/p><p>Consent: for optional features such as location, camera, microphone, notifications and contacts. You can withdraw consent at any time.<\/p><p>Legitimate interests: to keep the App safe and working, as long as this does not override your rights.<\/p><p>Legal obligation: where the law requires us to keep or share information.<\/p><h3>5. Who can see your information<\/h3><p>Public accounts: your profile details, posts and friends list can be seen by other users. Private accounts: only your friends can see your posts and friends list. Your name, username and profile photo may still appear so people can find and request you.<\/p><p>Likes, saves and shares are counted and shown as numbers. Other users cannot see who saved or shared a post.<\/p><p>Messages and calls are visible only to the people in that chat or group. Group chats are visible to all current group members.<\/p><p>View-once photos, videos and voice notes are removed for the recipient after they are opened. People can still screenshot or record what they see, so please share carefully.<\/p><h3>6. Who we share information with<\/h3><p>Service providers who help us run VIBEITY under strict instructions, for example cloud database, authentication and file storage (our backend is hosted with Supabase, with servers in the United Kingdom), website hosting (Vercel) and font delivery (Google Fonts).<\/p><p>Authorities or other parties where required by law, to protect someone’s safety, or to enforce our Terms.<\/p><p>A buyer or successor, if the business is ever sold or reorganised, with the same protections for your information.<\/p><p>We do not sell your data to advertisers or data brokers. If we ever introduce advertising or analytics that need new sharing, we will update this policy first and ask for consent where required.<\/p><h3>7. Transfers outside Nigeria<\/h3><p>Your information may be stored and processed outside Nigeria, including in the United Kingdom. We only use providers that protect data to a standard comparable to Nigerian law and we use contracts and security measures to protect it.<\/p><h3>8. How long we keep information<\/h3><p>Profile and content: until you delete it or your account. After deletion we remove it from live systems within a reasonable period, and backups expire on a regular cycle.<\/p><p>Messages: until you or the other person delete them or the account is deleted. Using “Clear chat” hides messages for you.<\/p><p>View-once media: removed for the recipient once opened.<\/p><p>Safety records: reports, blocks and records of serious violations may be kept for as long as needed to protect users and meet legal duties.<\/p><h3>9. Keeping your information safe<\/h3><p>We use encrypted connections (HTTPS), password protection, access controls and database rules so that people can only reach the data they are allowed to see. No online service is completely secure, so please use a strong, unique password and never share it.<\/p><p>If a data breach is likely to put you at risk, we will notify you and the NDPC as required by law.<\/p><h3>10. Your rights<\/h3><p>Under the Nigeria Data Protection Act 2023 you can: ask to see the personal data we hold about you; ask us to correct it; ask us to delete it; object to or ask us to restrict certain uses; ask for a copy in a portable format; and withdraw consent at any time.<\/p><p>To use these rights, email collinsolukoju@gmail.com from the email address on your account. We may need to verify who you are. We will reply within the time the law allows.<\/p><p>If you are not happy with our answer, you can complain to the Nigeria Data Protection Commission (ndpc.gov.ng).<\/p><h3>11. Children<\/h3><p>VIBEITY is only for people aged 18 and over. We do not knowingly collect information from anyone under 18. If you think a child is using VIBEITY, email collinsolukoju@gmail.com and we will act quickly.<\/p><h3>12. Browser storage<\/h3><p>We use your browser’s local storage and similar technology to keep you signed in, remember your settings and make the App work faster. We do not use this storage to track you across other websites. You can clear it in your browser settings, but you may then need to sign in again.<\/p><h3>13. Changes to this policy<\/h3><p>We may update this policy as VIBEITY grows. The date at the top shows the latest version. For important changes we will tell you in the App or by email.<\/p><h3>14. Contact<\/h3><p>Questions or requests about your data: collinsolukoju@gmail.com. BhigC Graphix (trading as VIBEITY), Nigeria.<\/p><p class=\"lg-note\">Draft for VIBEITY. Have a Nigerian lawyer review it before launch.<\/p>"}, "guidelines": {"title": "Community Guidelines", "html": "<p class=\"lg-date\">Last updated: 19 October 2026<\/p><h3>Our promise<\/h3><p>VIBEITY is for real people making real connections. These guidelines keep it respectful, safe and fun. Everyone who uses VIBEITY agrees to follow them.<\/p><h3>1. Be 18 or over, and be real<\/h3><p>You must be 18 or older. Use your own name and photos. Do not pretend to be someone else, use fake profiles, or run several accounts.<\/p><h3>2. Respect every person<\/h3><p>Treat people the way you want to be treated. No harassment, bullying, stalking, threats, insults or unwanted repeated messages. If someone says no or stops replying, accept it and move on.<\/p><h3>3. No hate<\/h3><p>Do not attack people because of their tribe, race, nationality, religion, gender, sexual orientation, disability, age or background. Hate speech and symbols are not allowed.<\/p><h3>4. Keep it appropriate<\/h3><p>No nudity, pornography or sexually explicit photos, videos, voice notes or messages. No sexual content involving anyone under 18, ever. We report this to the authorities.<\/p><p>No graphic violence, gore, or content that encourages self-harm. If you are struggling, please talk to someone you trust or a local support service.<\/p><h3>5. Consent and privacy<\/h3><p>Do not share anyone’s private photos, messages, phone number, address or other personal information without their permission. Do not screenshot, record or forward private chats, view-once media or calls to embarrass or harm someone.<\/p><p>Do not post photos or videos of other people without their consent.<\/p><h3>6. No scams, money requests or spam<\/h3><p>Do not ask people for money, gifts, airtime, crypto or personal financial details. Do not run investment, romance or “urgent help” scams. No mass messages, fake giveaways or unwanted advertising. Business promotion needs our written permission.<\/p><h3>7. Stay safe when meeting offline<\/h3><p>Meet in a busy public place, tell a friend or family member where you are going, and arrange your own transport. Never send money to someone you have not met. Trust your instincts and leave if you feel unsafe.<\/p><h3>8. No illegal activity<\/h3><p>Do not use VIBEITY to sell or promote illegal drugs, weapons, stolen goods, fake documents, fraud, or any activity that breaks Nigerian law.<\/p><h3>9. Groups and communities<\/h3><p>Group admins and members must follow these guidelines. Do not use groups to harass, spread rumours, share explicit content or recruit for scams. Admins can remove members who break the rules, and we may remove groups that do.<\/p><h3>10. Reels, comments and images<\/h3><p>Post content you have the right to share. Do not copy other people’s work. Comments and comment images must follow the same rules as everything else.<\/p><h3>11. Report and block<\/h3><p>Use Block in any chat to stop a person contacting you. To report a person, post, comment, image or group, email collinsolukoju@gmail.com with the username and what happened. Reports are taken seriously and handled as quickly as we can.<\/p><h3>12. What happens if rules are broken<\/h3><p>Depending on how serious it is, we may remove content, send a warning, limit features, suspend an account or ban it permanently. Serious or illegal behaviour may be reported to the police or other authorities. Decisions can be appealed by emailing collinsolukoju@gmail.com.<\/p><p class=\"lg-note\">Draft for VIBEITY. Have a Nigerian lawyer review it before launch.<\/p>"}};
+  const svg=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
+  const ICO={
+    phone:svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>'),
+    dots:svg('<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>'),
+    plus:svg('<path d="M12 5v14M5 12h14"/>'),
+    mic:svg('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'),
+    send:svg('<path d="M4 12l16-8-6 16-3-7z"/>'),
+    camera:svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+    image:svg('<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2"/><path d="M21 16l-5-4-7 7"/>'),
+    file:svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>'),
+    trash:svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
+    once:svg('<circle cx="12" cy="12" r="9"/><path d="M10.5 9L12.5 8v8"/>'),
+    play:svg('<path d="M8 5l11 7-11 7z" fill="currentColor"/>'),
+    pause:svg('<path d="M8 5v14M16 5v14"/>'),
+    download:svg('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'),
+    back:svg('<path d="M15 5l-7 7 7 7"/>'),
+    x:svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    users:svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17.5 14c2.6.3 4 2.2 4 5"/>'),
+    flip:svg('<path d="M4 8h12l-3-3M20 16H8l3 3"/>'),
+    speaker:svg('<path d="M4 10v4h4l5 4V6l-5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/>'),
+    micoff:svg('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/>'),
+    endcall:svg('<path d="M3 12c5-4 13-4 18 0l-2 3-4-1v-3a10 10 0 0 0-6 0v3l-4 1z"/>')
+  };
+  const pad=n=>String(n).padStart(2,"0");
+  const fmtDur=s=>`${Math.floor(s/60)}:${pad(Math.round(s%60))}`;
+  const fmtSize=b=>!b?"":b<1024?b+" B":b<1048576?(b/1024).toFixed(0)+" KB":(b/1048576).toFixed(1)+" MB";
+  const urlsIn=t=>(t||"").match(/https?:\/\/[^\s<]+/g)||[];
+  const linkify=t=>esc(t).replace(/(https?:\/\/[^\s<&]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const norm=m=>{m.kind=m.kind||"text";m.openedBy=m.openedBy||[];return m};
+  const kindLabel=m=>m.kind==="image"?"Photo":m.kind==="video"?"Video":m.kind==="voice"?"Voice note":"File";
+  const prevOf=m=>m.kind==="image"?"📷 Photo":m.kind==="video"?"🎬 Video":m.kind==="voice"?"🎤 Voice note":m.kind==="file"?"📄 "+(m.name||"File"):(m.text||"");
+  const isDemoId=id=>String(id||"").startsWith("demo-");
+
+  /* ---------- media storage (IndexedDB, so big files never fill the browser's small storage) ---------- */
+  const IDB=(()=>{let dbp;const open=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open("vibeity-media",1);r.onupgradeneeded=()=>r.result.createObjectStore("m");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
+    const tx=async(mode,fn)=>{const db=await open();return new Promise((res,rej)=>{const t=db.transaction("m",mode),r=fn(t.objectStore("m"));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)})};
+    const urls=new Map();
+    return{put:(id,b)=>tx("readwrite",s=>s.put(b,id)),blob:id=>tx("readonly",s=>s.get(id)),
+      del:async id=>{if(!id)return;if(urls.has(id)){URL.revokeObjectURL(urls.get(id));urls.delete(id)}return tx("readwrite",s=>s.delete(id))},
+      url:async id=>{if(!id)return"";if(urls.has(id))return urls.get(id);const b=await tx("readonly",s=>s.get(id));if(!b)return"";const u=URL.createObjectURL(b);urls.set(id,u);return u}}})();
+  const mediaSrc=async m=>m.url||(m.mediaId?IDB.url(m.mediaId):"");
+  function hydrate(root){root.querySelectorAll("[data-mid]").forEach(async el=>{const id=el.dataset.mid;if(!id)return;const u=await IDB.url(id);if(u){el.src=u}})}
+
+  /* ---------- lightbox (full screen photo / video / audio) ---------- */
+  document.body.insertAdjacentHTML("beforeend",'<div id="lightbox" class="hidden" role="dialog" aria-modal="true"><button id="lbClose" type="button" aria-label="Close">✕</button><div id="lbBody"></div></div>');
+  let lbDone=null;
+  function openLightbox(kind,src,done){
+    $("lbBody").innerHTML=kind==="video"?`<video src="${src}" controls autoplay playsinline></video>`:kind==="audio"?`<div class="lb-audio"><div class="lb-mic">🎤</div><audio src="${src}" controls autoplay></audio></div>`:`<img src="${src}" alt="">`;
+    $("lightbox").classList.remove("hidden");lbDone=done||null;
+  }
+  function closeLightbox(){document.querySelectorAll("#lbBody video,#lbBody audio").forEach(v=>v.pause());$("lbBody").innerHTML="";$("lightbox").classList.add("hidden");const d=lbDone;lbDone=null;if(d)d()}
+  $("lbClose").onclick=closeLightbox;
+  $("lightbox").addEventListener("click",e=>{if(e.target.id==="lightbox"||e.target.id==="lbBody")closeLightbox()});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("lightbox").classList.contains("hidden"))closeLightbox()});
+  document.addEventListener("click",e=>{const l=e.target.closest("[data-lightbox]");if(l){e.preventDefault();openLightbox("image",l.dataset.lightbox)}});
+
+  /* ---------- message lookup + rendering ---------- */
+  function findMsg(id){for(const c of state.chats){const m=c.messages.find(x=>x.id===id);if(m)return{m,conv:c,group:false}}for(const g of (state.groups||[])){const m=(g.messages||[]).find(x=>x.id===id);if(m)return{m,conv:g,group:true}}return null}
+  const visible=conv=>{const t=(conv.clearedAt&&conv.clearedAt[me()])||0;return conv.messages.filter(m=>m.createdAt>t)};
+  function msgHTML(m,ctx){
+    norm(m);
+    if(m.kind==="system")return `<div class="sys-msg" data-mrow="${m.id}">${esc(m.text)}</div>`;
+    const mine=m.from===me(),sender=ctx.group&&!mine?`<b class="sender">${esc(userById(m.from)?.name||"Member")}</b>`:"";
+    const foot=`<small>${clock(m.createdAt)}${mine?' <span class="tick">✓✓</span>':""}</small>`;
+    const once=m.viewOnce&&(m.kind==="image"||m.kind==="video"||m.kind==="voice");
+    let body="";
+    if(once){
+      const opened=m.openedBy.length>0;
+      if(mine)body=`<div class="m-once mine"><span class="once-ico">${ICO.once}</span><span>${kindLabel(m)} · View once<small>${opened?"Opened":"Sent"}</small></span></div>`;
+      else if(m.openedBy.includes(me())||m.gone)body=`<div class="m-once done"><span class="once-ico">${ICO.once}</span><span>Opened</span></div>`;
+      else body=`<button class="m-once" type="button" data-monce="${m.id}"><span class="once-ico">${ICO.once}</span><span>${kindLabel(m)}<small>Tap to view once</small></span></button>`;
+    }else if(m.kind==="image")body=`<button class="m-media" type="button" data-mopen="${m.id}" aria-label="Open photo"><img data-mid="${m.mediaId||""}" src="${m.url||""}" alt="Photo"></button>`+(m.text?`<div class="m-cap">${linkify(m.text)}</div>`:"");
+    else if(m.kind==="video")body=`<button class="m-media m-video" type="button" data-mopen="${m.id}" aria-label="Play video"><video data-mid="${m.mediaId||""}" src="${m.url||""}" preload="metadata" muted playsinline></video><span class="m-play">▶</span></button>`+(m.text?`<div class="m-cap">${linkify(m.text)}</div>`:"");
+    else if(m.kind==="file")body=`<button class="m-file" type="button" data-mdl="${m.id}"><span class="fi">${ICO.file}</span><span class="fn"><b>${esc(m.name||"File")}</b><small>${fmtSize(m.size)}</small></span><span class="dl">${ICO.download}</span></button>`;
+    else if(m.kind==="voice")body=`<div class="m-voice"><button class="vp-play" type="button" data-vplay="${m.id}" aria-label="Play voice note">${ICO.play}</button><div class="vp-bar"><i></i></div><span class="vp-dur">${fmtDur(m.dur||0)}</span></div>`;
+    else body=`<div class="m-text">${linkify(m.text||"")}</div>`+(m.sharedPost?`<button class="chip open-shared" type="button" data-open-post="${m.sharedPost}">▶ Watch</button>`:"");
+    return `<div class="bubble ${mine?"mine":""}" data-mrow="${m.id}">${sender}${body}${foot}</div>`;
+  }
+  let audioEl=null,audioId=null;
+  function rerender(){if(activeChatId)renderChatWindow();if(gcId)renderGroupChat();renderChats()}
+  document.addEventListener("click",async e=>{
+    const open=e.target.closest("[data-mopen]");
+    if(open){const f=findMsg(open.dataset.mopen);if(!f)return;const src=await mediaSrc(f.m);if(!src){toast("This media is no longer available.");return}openLightbox(f.m.kind==="video"?"video":"image",src);return}
+    const once=e.target.closest("[data-monce]");
+    if(once){const f=findMsg(once.dataset.monce);if(!f)return;const m=f.m,src=await mediaSrc(m);if(!src){toast("This media is no longer available.");return}
+      openLightbox(m.kind==="video"?"video":m.kind==="voice"?"audio":"image",src,async()=>{m.openedBy.push(me());m.gone=true;const id=m.mediaId;m.mediaId="";m.url="";await IDB.del(id);saveState();rerender()});return}
+    const dl=e.target.closest("[data-mdl]");
+    if(dl){const f=findMsg(dl.dataset.mdl);if(!f)return;const src=await mediaSrc(f.m);if(!src){toast("This file is no longer available.");return}const a=document.createElement("a");a.href=src;a.download=f.m.name||"file";document.body.appendChild(a);a.click();a.remove();return}
+    const vp=e.target.closest("[data-vplay]");
+    if(vp){const f=findMsg(vp.dataset.vplay);if(!f)return;const row=vp.closest(".m-voice"),bar=row.querySelector(".vp-bar i"),dur=row.querySelector(".vp-dur");
+      if(audioEl&&audioId===f.m.id){if(audioEl.paused){audioEl.play();vp.innerHTML=ICO.pause}else{audioEl.pause();vp.innerHTML=ICO.play}return}
+      if(audioEl){audioEl.pause();document.querySelectorAll(".vp-play").forEach(b=>b.innerHTML=ICO.play)}
+      const src=await mediaSrc(f.m);if(!src){toast("This voice note is no longer available.");return}
+      audioEl=new Audio(src);audioId=f.m.id;vp.innerHTML=ICO.pause;
+      audioEl.ontimeupdate=()=>{const d=audioEl.duration&&isFinite(audioEl.duration)?audioEl.duration:(f.m.dur||1);bar.style.width=Math.min(100,audioEl.currentTime/d*100)+"%";dur.textContent=fmtDur(audioEl.currentTime)};
+      audioEl.onended=()=>{vp.innerHTML=ICO.play;bar.style.width="0";dur.textContent=fmtDur(f.m.dur||0);audioEl=null;audioId=null};
+      audioEl.play().catch(()=>toast("Couldn't play this voice note."));
+    }
+  });
+  function demoOpen(m,conv,otherId){if(!m.viewOnce||!otherId||!isDemoId(otherId))return;setTimeout(()=>{if(!m.openedBy.includes(otherId)){m.openedBy.push(otherId);saveState();if(activeChatId===conv.id||gcId===conv.id)rerender()}},7000)}
+
+  /* ---------- attach: camera, photos & videos, files ---------- */
+  document.body.insertAdjacentHTML("beforeend",`<div id="attachSheet" class="hidden"><div class="as-card"><div class="as-grid"><button type="button" data-as="camera"><span>${ICO.camera}</span>Camera</button><button type="button" data-as="media"><span>${ICO.image}</span>Photos &amp; videos</button><button type="button" data-as="file"><span>${ICO.file}</span>File</button></div><button type="button" class="as-cancel" data-as="close">Cancel</button></div></div>
+  <div id="attachPreview" class="hidden"><div class="ap-top"><button type="button" id="apClose" aria-label="Close">${ICO.x}</button><span id="apTitle">Send</span></div><div id="apBody"></div><div id="apThumbs"></div><div class="ap-bottom"><input id="apCaption" maxlength="500" placeholder="Add a caption…"><button type="button" id="apOnce" aria-label="View once" title="View once">${ICO.once}</button><button type="button" id="apSend" aria-label="Send">${ICO.send}</button></div><div id="apHint" class="ap-hint hidden">View once is on. It disappears after they open it.</div></div>
+  <div id="cameraModal" class="hidden"><video id="camVideo" playsinline autoplay muted></video><div class="cam-bar"><button type="button" id="camClose" aria-label="Close">${ICO.x}</button><button type="button" id="camShot" aria-label="Take photo"></button><button type="button" id="camFlip" aria-label="Switch camera">${ICO.flip}</button></div></div>`);
+  let attachCtx=null;
+  function openAttach(ctx){const b=ctx.blockedMsg();if(b){toast(b.text);return}attachCtx=ctx;$("attachSheet").classList.remove("hidden")}
+  function closeAttach(){$("attachSheet").classList.add("hidden")}
+  $("attachSheet").addEventListener("click",e=>{
+    const b=e.target.closest("[data-as]");if(!b&&e.target.id!=="attachSheet")return;
+    const k=b?b.dataset.as:"close";closeAttach();if(k==="close")return;
+    if(k==="camera")openCamera(files=>previewFiles(files,attachCtx));
+    else{const i=document.createElement("input");i.type="file";if(k==="media"){i.accept="image/*,video/*";i.multiple=true}i.onchange=()=>{if(i.files.length)previewFiles([...i.files],attachCtx)};i.click()}
+  });
+  function fallbackCapture(cb){const i=document.createElement("input");i.type="file";i.accept="image/*";i.setAttribute("capture","environment");i.onchange=()=>{if(i.files.length)cb([...i.files])};i.click()}
+  async function openCamera(cb){
+    if(!navigator.mediaDevices?.getUserMedia){fallbackCapture(cb);return}
+    let facing="environment",stream=null;const vid=$("camVideo"),modal=$("cameraModal");
+    const stop=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;vid.srcObject=null};
+    const close=()=>{stop();modal.classList.add("hidden")};
+    async function start(){stop();try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false});vid.srcObject=stream;modal.classList.remove("hidden");return true}catch(err){modal.classList.add("hidden");return false}}
+    if(!(await start())){toast("Camera permission was not granted. Choose a photo instead.");fallbackCapture(cb);return}
+    $("camClose").onclick=close;
+    $("camFlip").onclick=()=>{facing=facing==="environment"?"user":"environment";start()};
+    $("camShot").onclick=()=>{const w=vid.videoWidth||1280,h=vid.videoHeight||720,c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(vid,0,0,w,h);c.toBlob(b=>{close();if(b)cb([new File([b],"photo-"+Date.now()+".jpg",{type:"image/jpeg"})])},"image/jpeg",.9)};
+  }
+  let apItems=[],apIdx=0,apOnce=false,apCtx=null;
+  function previewFiles(files,ctx){
+    const LIMIT=25*1024*1024,items=[];
+    [...files].forEach(f=>{if(f.size>LIMIT){toast((f.name||"File")+" is larger than 25 MB.");return}items.push({file:f,kind:f.type.startsWith("image/")?"image":f.type.startsWith("video/")?"video":"file",url:URL.createObjectURL(f)})});
+    if(!items.length)return;
+    apItems=items;apIdx=0;apOnce=false;apCtx=ctx;$("apCaption").value="";$("apOnce").classList.remove("on");$("apHint").classList.add("hidden");
+    $("attachPreview").classList.remove("hidden");drawPreview();
+  }
+  function drawPreview(){
+    const it=apItems[apIdx],body=$("apBody");
+    body.innerHTML=it.kind==="image"?`<img src="${it.url}" alt="Preview">`:it.kind==="video"?`<video src="${it.url}" controls playsinline></video>`:`<div class="ap-file"><span>${ICO.file}</span><b>${esc(it.file.name)}</b><small>${fmtSize(it.file.size)}</small></div>`;
+    $("apThumbs").innerHTML=apItems.length>1?apItems.map((x,i)=>`<button type="button" data-apt="${i}" class="${i===apIdx?"on":""}">${x.kind==="image"?`<img src="${x.url}" alt="">`:x.kind==="video"?"🎬":"📄"}</button>`).join(""):"";
+    $("apTitle").textContent=apItems.length>1?`${apIdx+1} of ${apItems.length}`:it.kind==="image"?"Photo":it.kind==="video"?"Video":"File";
+    $("apOnce").style.display=apItems.every(x=>x.kind!=="file")?"":"none";
+  }
+  $("apThumbs").addEventListener("click",e=>{const b=e.target.closest("[data-apt]");if(b){apIdx=+b.dataset.apt;drawPreview()}});
+  function closePreview(){apItems.forEach(x=>URL.revokeObjectURL(x.url));apItems=[];$("apBody").innerHTML="";$("attachPreview").classList.add("hidden")}
+  $("apClose").onclick=closePreview;
+  $("apOnce").onclick=()=>{apOnce=!apOnce;$("apOnce").classList.toggle("on",apOnce);$("apHint").classList.toggle("hidden",!apOnce)};
+  $("apSend").onclick=async()=>{
+    const btn=$("apSend");if(btn.disabled)return;btn.disabled=true;const cap=$("apCaption").value.trim();
+    try{
+      for(let i=0;i<apItems.length;i++){
+        const it=apItems[i];let blob=it.file;
+        if(it.kind==="image"&&!/gif|svg/.test(it.file.type)){try{blob=await compressBlob(it.file,1280,.82)}catch(e){blob=it.file}}
+        const id=makeId();await IDB.put(id,blob);
+        apCtx.send({kind:it.kind,mediaId:id,size:blob.size,mime:blob.type||it.file.type,name:it.file.name||"file",text:i===0?cap:"",viewOnce:apOnce&&it.kind!=="file"});
+      }
+      closePreview();
+    }catch(e){console.error(e);toast("Couldn't send that. Try a smaller file.")}
+    btn.disabled=false;
+  };
+
+  /* ---------- composer (used by chats and group chats) ---------- */
+  function buildComposer(host,ctx){
+    host.innerHTML=`<div class="cmp-blocked hidden"></div><div class="cmp-main"><button class="cmp-plus" type="button" aria-label="Attach">${ICO.plus}</button><input class="cmp-input" maxlength="1000" placeholder="Type a message..." autocomplete="off"><button class="cmp-act" type="button" aria-label="Voice note">${ICO.mic}</button></div><div class="cmp-rec hidden"><button class="rec-cancel" type="button" aria-label="Cancel recording">${ICO.trash}</button><span class="rec-dot"></span><span class="rec-time">0:00</span><button class="rec-once" type="button" aria-label="View once">${ICO.once}</button><button class="rec-send" type="button" aria-label="Send voice note">${ICO.send}</button></div>`;
+    const q=s=>host.querySelector(s),input=q(".cmp-input"),act=q(".cmp-act");
+    const sync=()=>{const has=!!input.value.trim();act.innerHTML=has?ICO.send:ICO.mic;act.classList.toggle("send",has);act.setAttribute("aria-label",has?"Send":"Voice note")};
+    const sendText=()=>{const t=input.value.trim();if(!t)return;if(ctx.blockedMsg())return;ctx.send({kind:"text",text:t});input.value="";sync()};
+    input.addEventListener("input",sync);
+    input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendText()}});
+    act.addEventListener("click",()=>{if(input.value.trim())sendText();else startRec(host,ctx)});
+    q(".cmp-plus").addEventListener("click",()=>openAttach(ctx));
+    return{refresh(){const b=ctx.blockedMsg(),bl=q(".cmp-blocked");bl.classList.toggle("hidden",!b);q(".cmp-main").classList.toggle("hidden",!!b);bl.innerHTML=b?`<span>${esc(b.text)}</span>${b.action?`<button type="button" class="bl-act">${esc(b.action)}</button>`:""}`:"";if(b&&b.fn){const x=bl.querySelector(".bl-act");if(x)x.onclick=b.fn}}};
+  }
+  async function startRec(host,ctx){
+    if(ctx.blockedMsg())return;
+    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){toast("Voice notes aren't supported in this browser.");return}
+    let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){toast("Microphone permission was not granted.");return}
+    const mr=new MediaRecorder(stream),chunks=[],t0=Date.now(),main=host.querySelector(".cmp-main"),bar=host.querySelector(".cmp-rec"),timeEl=bar.querySelector(".rec-time"),onceBtn=bar.querySelector(".rec-once");
+    let once=false,cancelled=false;
+    mr.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+    main.classList.add("hidden");bar.classList.remove("hidden");onceBtn.classList.remove("on");timeEl.textContent="0:00";
+    const tick=setInterval(()=>{const s=Math.round((Date.now()-t0)/1000);timeEl.textContent=fmtDur(s);if(s>=300)finish(true)},400);
+    const finish=send=>{cancelled=!send;if(mr.state!=="inactive")mr.stop()};
+    mr.onstop=async()=>{clearInterval(tick);stream.getTracks().forEach(t=>t.stop());bar.classList.add("hidden");main.classList.remove("hidden");if(cancelled)return;
+      const blob=new Blob(chunks,{type:mr.mimeType||"audio/webm"}),dur=Math.max(1,Math.round((Date.now()-t0)/1000));if(blob.size<200)return;
+      const id=makeId();await IDB.put(id,blob);ctx.send({kind:"voice",mediaId:id,size:blob.size,mime:blob.type,dur,viewOnce:once})};
+    bar.querySelector(".rec-cancel").onclick=()=>finish(false);
+    bar.querySelector(".rec-send").onclick=()=>finish(true);
+    onceBtn.onclick=()=>{once=!once;onceBtn.classList.toggle("on",once);toast(once?"View once is on.":"View once is off.")};
+    mr.start();
+  }
+
+  /* ---------- tones + calls ---------- */
+  const TONES={classic:"Classic",chime:"Chime",pulse:"Pulse",silent:"Silent"};
+  function playTone(name,ms){
+    if(name==="silent")return()=>{};
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return()=>{};
+    const ctx=new AC();let stopped=false;
+    const beep=(f,t,d,v)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;o.type="sine";g.gain.setValueAtTime(0,ctx.currentTime+t);g.gain.linearRampToValueAtTime(v||.12,ctx.currentTime+t+.03);g.gain.linearRampToValueAtTime(0,ctx.currentTime+t+d);o.connect(g);g.connect(ctx.destination);o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+d+.05)};
+    const cycle=()=>{if(stopped)return;if(name==="chime"){beep(523,0,.3);beep(659,.3,.3);beep(784,.6,.5)}else if(name==="pulse"){beep(880,0,.15);beep(880,.3,.15)}else{beep(440,0,.4);beep(480,0,.4)}};
+    cycle();const iv=setInterval(cycle,name==="pulse"?1100:2200);
+    const stop=()=>{stopped=true;clearInterval(iv);try{ctx.close()}catch(e){}};
+    if(ms)setTimeout(stop,ms);return stop;
+  }
+  document.body.insertAdjacentHTML("beforeend",`<div id="callScreen" class="hidden" role="dialog" aria-modal="true"><div class="call-top"><div class="call-av" id="callAv"></div><h2 id="callName"></h2><p id="callState">Calling…</p><p id="callTimer" class="hidden">0:00</p></div><p class="call-note">Demo call. Nobody is on the other end yet; live voice calling arrives with the backend.</p><div class="call-btns"><button type="button" id="callMute" aria-label="Mute microphone">${ICO.mic}</button><button type="button" id="callEnd" class="end" aria-label="End call">${ICO.endcall}</button><button type="button" id="callSpk" aria-label="Speaker">${ICO.speaker}</button></div></div>`);
+  let callStop=null;
+  async function startCall(o){
+    const scr=$("callScreen");$("callAv").innerHTML=o.avatar;$("callName").textContent=o.name;$("callState").textContent="Calling…";$("callTimer").classList.add("hidden");scr.classList.remove("hidden");
+    $("callMute").classList.remove("on");$("callSpk").classList.remove("on");
+    let stream=null,muted=false,t0=0,timer=null;const stopRing=playTone(o.tone||"classic");
+    try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){toast("Microphone permission was not granted. Allow it to talk on a call.")}
+    const connect=setTimeout(()=>{stopRing();$("callState").textContent=o.group?"Group call connected":"Connected";t0=Date.now();$("callTimer").classList.remove("hidden");timer=setInterval(()=>{$("callTimer").textContent=fmtDur((Date.now()-t0)/1000)},500)},3500);
+    const end=()=>{clearTimeout(connect);clearInterval(timer);stopRing();if(stream)stream.getTracks().forEach(t=>t.stop());scr.classList.add("hidden");callStop=null};
+    callStop=end;
+    $("callEnd").onclick=end;
+    $("callMute").onclick=()=>{muted=!muted;if(stream)stream.getAudioTracks().forEach(t=>t.enabled=!muted);$("callMute").classList.toggle("on",muted);$("callMute").innerHTML=muted?ICO.micoff:ICO.mic};
+    $("callSpk").onclick=()=>$("callSpk").classList.toggle("on");
+  }
+
+  /* ---------- direct chats ---------- */
+  const blocked=id=>(state.blocked||[]).some(b=>b.from===me()&&b.to===id);
+  const otherOf=c=>userById(c.members.find(id=>id!==me()));
+  let pendingMsg=null;
+  const dmCtx={
+    conv:()=>state.chats.find(c=>c.id===activeChatId),
+    send(p){const c=this.conv();if(!c)return;const o=c.members.find(id=>id!==me());const m=norm(Object.assign({id:makeId(),from:me(),createdAt:Date.now(),openedBy:[]},p));c.messages.push(m);saveState();renderChatWindow();renderChats();demoOpen(m,c,o)},
+    blockedMsg(){const c=this.conv();if(!c)return null;const o=c.members.find(id=>id!==me());return blocked(o)?{text:"You blocked this user.",action:"Unblock",fn:()=>{state.blocked=(state.blocked||[]).filter(b=>!(b.from===me()&&b.to===o));saveState();renderChatWindow();toast("User unblocked.")}}:null}
+  };
+  const oldC=document.querySelector(".chat-compose");const dmHost=document.createElement("div");dmHost.className="chat-compose";dmHost.id="dmCompose";oldC.replaceWith(dmHost);
+  const dmComposer=buildComposer(dmHost,dmCtx);
+  const si=$("chatSearch"),si2=si.cloneNode(true);si.replaceWith(si2);let sTimer=null;si2.addEventListener("input",()=>{clearTimeout(sTimer);sTimer=setTimeout(()=>renderChats(),120)});
+
+  function closePops(){document.querySelectorAll(".pop-menu").forEach(p=>p.remove())}
+  document.addEventListener("click",e=>{if(!e.target.closest(".pop-menu,#dmMenu,#gcMenuBtn"))closePops()});
+  function popMenu(host,items){closePops();const d=document.createElement("div");d.className="pop-menu";d.innerHTML=items.map((it,i)=>`<button type="button" data-pi="${i}" class="${it.danger?"danger":""}">${it.label}</button>`).join("");host.appendChild(d);d.addEventListener("click",e=>{const b=e.target.closest("[data-pi]");if(!b)return;const it=items[+b.dataset.pi];closePops();it.fn()})}
+
+  function dmMenu(c){
+    const o=c.members.find(id=>id!==me()),u=userById(o);
+    popMenu($(".chat-window")?$(".chat-window"):document.querySelector(".chat-window"),[
+      {label:"View profile",fn:()=>u&&U.openProfilePage(u.id)},
+      {label:c.pinned?.[me()]?"Unpin chat":"Pin chat to top",fn:()=>{c.pinned=c.pinned||{};c.pinned[me()]=!c.pinned[me()];saveState();renderChats();renderChatWindow();toast(c.pinned[me()]?"Chat pinned to the top.":"Chat unpinned.")}},
+      {label:c.muted?.[me()]?"Unmute notifications":"Mute notifications",fn:()=>{c.muted=c.muted||{};c.muted[me()]=!c.muted[me()];saveState();renderChats();renderChatWindow();toast(c.muted[me()]?"Chat muted.":"Chat unmuted.")}},
+      {label:"Clear chat",fn:()=>{if(confirm("Clear all messages in this chat for you? The other person keeps their copy.")){c.clearedAt=c.clearedAt||{};c.clearedAt[me()]=Date.now();saveState();renderChatWindow();renderChats();toast("Chat cleared.")}}},
+      {label:blocked(o)?"Unblock user":"Block user",danger:!blocked(o),fn:()=>{if(blocked(o)){state.blocked=(state.blocked||[]).filter(b=>!(b.from===me()&&b.to===o));toast("User unblocked.")}else{if(!confirm("Block "+(u?.name||"this user")+"? They won't be able to message you and will be hidden from Discover."))return;state.blocked=state.blocked||[];state.blocked.push({from:me(),to:o});toast("User blocked.")}saveState();renderChatWindow();renderChats()}},
+      {label:"Delete chat",danger:true,fn:()=>{if(confirm("Delete this conversation?")){state.chats=state.chats.filter(x=>x.id!==c.id);activeChatId=null;saveState();renderChats();renderChatWindow()}}}
+    ]);
+  }
+  renderChatWindow=function(){
+    const c=state.chats.find(x=>x.id===activeChatId),lay=document.querySelector(".chat-layout"),box=$("chatMessages");
+    lay.classList.toggle("chat-open",!!c);document.body.classList.toggle("chat-active",!!c);
+    if(!c){$("chatHeader").innerHTML="<strong>Select a conversation</strong>";box.innerHTML='<div class="empty">Choose a chat to view messages.</div>';dmHost.classList.add("hidden");return}
+    dmHost.classList.remove("hidden");closePops();
+    const o=otherOf(c),muted=c.muted?.[me()];
+    $("chatHeader").innerHTML=`<button class="chat-back" id="chatBack" type="button" aria-label="Back to chats">←</button><button class="chat-head-av" type="button" data-profile="${o?.id||""}"><span class="av-wrap">${avatarMarkup(o||{name:"?"})}${o?.online?'<i class="dot-online"></i>':""}</span></button><div class="chat-head-info"><strong>${esc(o?.name||"Conversation")}</strong><div class="subtle">${o?.online?'<span class="online-txt">● Online</span>':"Offline"}${muted?" · 🔕 Muted":""}</div></div><button class="hd-btn" id="dmCall" type="button" aria-label="Voice call">${ICO.phone}</button><button class="hd-btn" id="dmMenu" type="button" aria-label="Chat options">${ICO.dots}</button>`;
+    $("chatBack").onclick=()=>{activeChatId=null;renderChats();renderChatWindow()};
+    $("dmCall").onclick=()=>{if(blocked(o?.id)){toast("You blocked this user.");return}startCall({name:o?.name||"Call",avatar:avatarMarkup(o||{name:"?"}),tone:"classic"})};
+    $("dmMenu").onclick=ev=>{ev.stopPropagation();dmMenu(c)};
+    const msgs=visible(c);box.innerHTML=msgs.length?msgs.map(m=>msgHTML(m,{group:false})).join(""):'<div class="empty">Say hello to start chatting.</div>';hydrate(box);
+    if(pendingMsg){const el=box.querySelector(`[data-mrow="${pendingMsg}"]`);if(el){el.scrollIntoView({block:"center"});el.classList.add("flash");setTimeout(()=>el.classList.remove("flash"),1800)}else box.scrollTop=box.scrollHeight;pendingMsg=null}else box.scrollTop=box.scrollHeight;
+    dmComposer.refresh();
+  };
+
+  /* ---------- Messages list + search ---------- */
+  const unread=(conv,m_)=>{const r=Math.max(conv.readAt?.[m_]||0,conv.clearedAt?.[m_]||0);return conv.messages.filter(m=>m.from!==m_&&m.createdAt>r&&m.kind!=="system").length};
+  function listTime(ts){const d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return clock(ts);if(d.toDateString()===new Date(n-864e5).toDateString())return"Yesterday";return d.toLocaleDateString([],{day:"numeric",month:"short"})}
+  const incoming=()=>state.requests.filter(r=>r.to===me()&&r.status==="pending");
+  const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  function hl(text,q){if(!q)return esc(text);const re=new RegExp(reEsc(q),"ig");let out="",last=0,m;while((m=re.exec(text))){out+=esc(text.slice(last,m.index))+"<mark>"+esc(m[0])+"</mark>";last=m.index+m[0].length;if(m.index===re.lastIndex)re.lastIndex++}return out+esc(text.slice(last))}
+  function snippet(text,q){const i=text.toLowerCase().indexOf(q.toLowerCase());if(i<0)return text.slice(0,70);const s=Math.max(0,i-28),e=Math.min(text.length,i+q.length+40);return(s>0?"…":"")+text.slice(s,e)+(e<text.length?"…":"")}
+  const gAv=(g,cls)=>`<span class="g-av ${cls||""}">${g.photo?`<img src="${g.photo}" alt="">`:esc(g.emoji||"👥")}</span>`;
+  renderChats=function(){
+    const mid=me();if(!mid)return;
+    (state.groups||[]).forEach(ensureGroup);
+    const list=$("chatList"),q=$("chatSearch").value.trim(),ql=q.toLowerCase();
+    const threads=state.chats.filter(c=>c.members.length===2&&c.members.includes(mid));
+    const talked=new Set(threads.filter(c=>visible(c).length).map(c=>c.members.find(id=>id!==mid)));
+    const fresh=U.myFriends().filter(f=>!talked.has(f.id));
+    $("matchesBox").innerHTML=`<h3 class="sec-title">Matches</h3><div class="matches-row"><button class="likes-tile" data-golikes><b>${incoming().length}</b><small>Likes</small></button>${fresh.map(f=>`<button class="match-av" data-newchat="${f.id}"><span class="ring">${avatarMarkup(f)}</span><small>${esc((f.name||f.username||"").split(" ")[0])}</small><i class="new-pill">New</i></button>`).join("")}</div>`;
+    const myGroups=(state.groups||[]).filter(g=>g.members.includes(mid));
+    const rowOf=x=>{const last=visible(x.conv).at(-1),un=unread(x.conv,mid),muted=x.conv.muted?.[mid],pin=x.conv.pinned?.[mid];
+      return `<button class="chat-row ${x.type==="dm"&&activeChatId===x.conv.id?"active":""} ${un&&!muted?"unread":""}" ${x.type==="dm"?`data-chat="${x.conv.id}"`:`data-group="${x.conv.id}"`}>${x.av}<span class="chat-row-main"><span class="chat-row-top"><strong>${esc(x.name)}</strong><span class="chat-time">${last?listTime(last.createdAt):""}</span></span><span class="chat-row-bottom"><span class="chat-preview">${last&&last.from===mid&&last.kind!=="system"?'<span class="tick">✓✓</span> ':""}${esc(last?prevOf(last):"Say hello 👋")}</span><span class="chat-badges">${muted?"🔕":""}${pin?"📌":""}${un?`<span class="unread-dot ${muted?"muted":""}">${un}</span>`:""}</span></span></span></button>`};
+    const dm=x=>{const o=otherOf(x);return{type:"dm",conv:x,name:o?.name||"Conversation",av:`<span class="av-wrap">${avatarMarkup(o||{name:"?"})}${o?.online?'<i class="dot-online"></i>':""}</span>`,sub:(o?.username||"")}};
+    const gr=g=>({type:"group",conv:g,name:g.name,av:`<span class="av-wrap">${gAv(g)}</span>`,sub:""});
+    const lastT=x=>visible(x.conv).at(-1)?.createdAt||0;
+    let html="";
+    if(!q){
+      const support=`<a class="chat-row support-row" href="${SUPPORT_WA}?text=${encodeURIComponent("Hi BhigC, I need help with VIBEITY.")}" target="_blank" rel="noopener"><div class="avatar" style="background:linear-gradient(135deg,#FF3D6E,#8B5CF6);color:#fff">B</div><span class="chat-row-main"><span class="chat-row-top"><strong>BhigC Support</strong></span><span class="chat-row-bottom"><span class="chat-preview">Need any help?</span></span></span></a>`;
+      const rows=[...threads.filter(c=>visible(c).length||c.id===activeChatId).map(dm),...myGroups.filter(g=>g.pinned?.[mid]).map(gr)].sort((a,b)=>(b.conv.pinned?.[mid]?1:0)-(a.conv.pinned?.[mid]?1:0)||lastT(b)-lastT(a));
+      html=support+(rows.length?rows.map(rowOf).join(""):'<div class="empty">No conversations yet. Tap a match above to say hello.</div>');
+    }else{
+      const chatRows=[...threads.map(dm).filter(x=>(x.name+" "+x.sub).toLowerCase().includes(ql)),...myGroups.map(gr).filter(x=>x.name.toLowerCase().includes(ql))];
+      const hits=[];
+      threads.forEach(c=>visible(c).forEach(m=>{const t=m.kind==="file"?(m.name||""):m.kind==="system"?"":(m.text||"");if(t&&t.toLowerCase().includes(ql))hits.push({x:dm(c),m,t})}));
+      myGroups.forEach(g=>visible(g).forEach(m=>{const t=m.kind==="file"?(m.name||""):m.kind==="system"?"":(m.text||"");if(t&&t.toLowerCase().includes(ql))hits.push({x:gr(g),m,t})}));
+      hits.sort((a,b)=>b.m.createdAt-a.m.createdAt);
+      html=(chatRows.length?`<div class="sr-title">Chats</div>`+chatRows.map(rowOf).join(""):"")+(hits.length?`<div class="sr-title">Messages</div>`+hits.slice(0,40).map(h=>`<button class="chat-row sr-msg" ${h.x.type==="dm"?`data-chat="${h.x.conv.id}"`:`data-group="${h.x.conv.id}"`} data-msgres="${h.m.id}">${h.x.av}<span class="chat-row-main"><span class="chat-row-top"><strong>${esc(h.x.name)}</strong><span class="chat-time">${listTime(h.m.createdAt)}</span></span><span class="chat-row-bottom"><span class="chat-preview">${h.m.from===mid?"You: ":""}${hl(snippet(h.t,q),q)}</span></span></span></button>`).join(""):"")||`<div class="empty">Nothing found for “${esc(q)}”. Try a username, a name or a word from a chat.</div>`;
+    }
+    list.innerHTML=html;
+    list.querySelectorAll("[data-chat]").forEach(b=>b.onclick=()=>{if(b.dataset.msgres)pendingMsg=b.dataset.msgres;openChat(b.dataset.chat)});
+    list.querySelectorAll("[data-group]").forEach(b=>b.onclick=()=>vbOpenGroup(b.dataset.group,b.dataset.msgres));
+    const all=[...threads,...myGroups].reduce((n,c)=>n+(c.muted?.[mid]?0:unread(c,mid)),0),mc=$("msgCount");mc.textContent=all;mc.classList.toggle("hidden",!all);
+    if(activeChatId&&!state.chats.some(c=>c.id===activeChatId&&c.members.includes(mid)))activeChatId=null;
+    renderChatWindow();
+  };
+
+  /* ---------- groups ---------- */
+  function ensureGroup(g){g.admins=g.admins&&g.admins.length?g.admins:[g.createdBy||g.members[0]];g.addPolicy=g.addPolicy||"everyone";["muted","pinned","clearedAt","ringtones","themes","readAt"].forEach(k=>{g[k]=g[k]||{}});g.messages=g.messages||[];g.messages.forEach(norm);return g}
+  const THEMES={default:["Purple","#8B5CF6","#17121F"],sunset:["Sunset","#E11D48","#2A0F1C"],ocean:["Ocean","#0369A1","#0A1B2A"],forest:["Forest","#15803D","#0D1F14"],mono:["Slate","#475569","#12161C"]};
+  let gcId=null,gcPending=null;
+  document.body.insertAdjacentHTML("beforeend",`<div id="groupChat" class="gc hidden"><div class="gc-panel" id="gcPanel"><header class="gc-head" id="gcHead"></header><div class="gc-msgs" id="gcMsgs"></div><div class="chat-compose gc-compose" id="gcCompose"></div></div></div><div id="groupInfo" class="gi hidden"><div class="gi-panel" id="giPanel"></div></div>`);
+  const gcHost=$("gcCompose");
+  const gcCtx={
+    g:()=>state.groups.find(x=>x.id===gcId),
+    send(p){const g=this.g();if(!g)return;const m=norm(Object.assign({id:makeId(),from:me(),createdAt:Date.now(),openedBy:[]},p));g.messages.push(m);saveState();renderGroupChat();renderChats()},
+    blockedMsg(){const g=this.g();return g&&g.members.includes(me())?null:{text:"You are not a member of this group."}}
+  };
+  const gcComposer=buildComposer(gcHost,gcCtx);
+  window.vbOpenGroup=function(gid,msgId){const g=state.groups.find(x=>x.id===gid);if(!g)return;ensureGroup(g);gcId=gid;gcPending=msgId||null;$("groupChat").classList.remove("hidden");document.body.classList.add("sheet-open");renderGroupChat()};
+  function closeGroupChat(){$("groupChat").classList.add("hidden");$("groupInfo").classList.add("hidden");gcId=null;closePops();document.body.classList.remove("sheet-open");renderChats()}
+  function renderGroupChat(){
+    const g=state.groups.find(x=>x.id===gcId);if(!g)return;ensureGroup(g);const mid=me(),th=THEMES[g.themes[mid]]||THEMES.default;
+    const panel=$("gcPanel");panel.style.setProperty("--mine",th[1]);panel.style.setProperty("--gcbg",th[2]);
+    $("gcHead").innerHTML=`<button class="hd-btn" id="gcBack" type="button" aria-label="Back">${ICO.back}</button><button class="gc-title" id="gcTitle" type="button">${gAv(g,"sm")}<span><b>${esc(g.name)}</b><small>${g.members.length} member${g.members.length===1?"":"s"}${g.muted[mid]?" · 🔕 Muted":""}</small></span></button><button class="hd-btn" id="gcCall" type="button" aria-label="Group voice call">${ICO.phone}</button><button class="hd-btn" id="gcMenuBtn" type="button" aria-label="Group options">${ICO.dots}</button>`;
+    $("gcBack").onclick=closeGroupChat;$("gcTitle").onclick=()=>openGroupInfo();
+    $("gcCall").onclick=()=>startCall({name:g.name,avatar:gAv(g,"lg"),group:true,tone:g.ringtones[mid]||"classic"});
+    $("gcMenuBtn").onclick=ev=>{ev.stopPropagation();popMenu(panel,[
+      {label:"Group info",fn:()=>openGroupInfo()},
+      {label:g.muted[mid]?"Unmute notifications":"Mute notifications",fn:()=>{g.muted[mid]=!g.muted[mid];saveState();renderGroupChat();toast(g.muted[mid]?"Group muted.":"Group unmuted.")}},
+      {label:g.pinned[mid]?"Unpin from message list":"Pin to top of message list",fn:()=>{g.pinned[mid]=!g.pinned[mid];saveState();toast(g.pinned[mid]?"Pinned to the top of your Messages.":"Unpinned.")}},
+      {label:"Clear chat",fn:()=>clearGroup(g)},
+      {label:"Exit group",danger:true,fn:()=>exitGroup(g)}])};
+    const box=$("gcMsgs"),msgs=visible(g);
+    box.innerHTML=msgs.length?msgs.map(m=>msgHTML(m,{group:true})).join(""):'<div class="empty">No messages yet. Say hello! 👋</div>';hydrate(box);
+    if(gcPending){const el=box.querySelector(`[data-mrow="${gcPending}"]`);if(el){el.scrollIntoView({block:"center"});el.classList.add("flash");setTimeout(()=>el.classList.remove("flash"),1800)}else box.scrollTop=box.scrollHeight;gcPending=null}else box.scrollTop=box.scrollHeight;
+    g.readAt[mid]=Date.now();gcComposer.refresh();
+  }
+  function clearGroup(g){if(!confirm("Clear all messages in this group for you? Other members keep their copy."))return;g.clearedAt[me()]=Date.now();saveState();renderGroupChat();if(!$("groupInfo").classList.contains("hidden"))renderGroupInfo();toast("Chat cleared.")}
+  function exitGroup(g){if(!confirm("Exit "+g.name+"?"))return;const mid=me();g.members=g.members.filter(x=>x!==mid);g.admins=g.admins.filter(x=>x!==mid);if(!g.admins.length&&g.members.length)g.admins=[g.members[0]];g.messages.push(norm({id:makeId(),kind:"system",from:mid,text:(userById(mid)?.name||"A member")+" left the group",createdAt:Date.now()}));saveState();closeGroupChat();showPage("communities");toast("You left the group.")}
+
+  /* group info: members, media, settings */
+  let giTab="members",giSub="media",giQ="";
+  function openGroupInfo(tab){giTab=tab||"members";giSub="media";giQ="";$("groupInfo").classList.remove("hidden");renderGroupInfo()}
+  const isAdmin=g=>g.admins.includes(me());
+  const canAdd=g=>g.addPolicy==="everyone"||isAdmin(g);
+  const SETTINGS=[["theme","Chat theme"],["notify","Group notifications · mute or unmute notifications"],["tone","Ringing tone for calls"],["pin","Pin group chat on top of message list"],["add","Who can add members"],["clear","Clear chat"],["exit","Exit group"]];
+  function mediaItems(g){return g.messages.filter(m=>(m.kind==="image"||m.kind==="video")&&!m.viewOnce&&(m.mediaId||m.url))}
+  function memberRow(g,id){const u=userById(id),isMe=id===me();return `<div class="gi-row"><button class="pr-main" type="button" ${u?`data-profile="${u.id}"`:""}>${avatarMarkup(u||{name:"?"})}<span class="person-info"><strong>${esc(u?.name||"Member")}${isMe?" (You)":""}</strong><small>@${esc(u?.username||"member")}${g.admins.includes(id)?" · Admin":""}</small></span></button>${isMe?"":`<button class="small-btn" type="button" data-gi-dm="${id}">Message</button>`}</div>`}
+  function mediaTile(m){const u=userById(m.from);return `<button class="gi-tile" type="button" data-mopen="${m.id}" aria-label="Open media">${m.kind==="video"?`<video data-mid="${m.mediaId||""}" src="${m.url||""}" muted playsinline preload="metadata"></video><span class="t-ico">▶</span>`:`<img data-mid="${m.mediaId||""}" src="${m.url||""}" alt="">`}<span class="t-meta">${esc((u?.name||"Member").split(" ")[0])}</span></button>`}
+  const linkRows=(g,list)=>list.length?list.map(x=>`<a class="gi-link" href="${esc(x.url)}" target="_blank" rel="noopener"><b>${esc(x.url)}</b><small>${esc(userById(x.m.from)?.name||"Member")} · ${listTime(x.m.createdAt)}</small></a>`).join(""):'<div class="empty">No links shared yet.</div>';
+  const docRows=list=>list.length?list.map(m=>`<button class="m-file gi-doc" type="button" data-mdl="${m.id}"><span class="fi">${ICO.file}</span><span class="fn"><b>${esc(m.name||"File")}</b><small>${fmtSize(m.size)} · ${esc(userById(m.from)?.name||"Member")}</small></span><span class="dl">${ICO.download}</span></button>`).join(""):'<div class="empty">No documents shared yet.</div>';
+  function settingsHTML(g,only){
+    const mid=me(),th=g.themes[mid]||"default",tn=g.ringtones[mid]||"classic";const rows={
+      theme:`<div class="gi-set" data-set="theme"><h4>Chat theme</h4><div class="swatches">${Object.entries(THEMES).map(([k,v])=>`<button type="button" data-gi-theme="${k}" class="${k===th?"on":""}" style="background:${v[1]}" aria-label="${v[0]} theme"><span>${v[0]}</span></button>`).join("")}</div></div>`,
+      notify:`<div class="gi-set" data-set="notify"><h4>Group notifications</h4><button class="btn ${g.muted[mid]?"btn-primary":"btn-outline"} btn-full" type="button" data-gi-act="mute">${g.muted[mid]?"Unmute notifications":"Mute notifications"}</button></div>`,
+      tone:`<div class="gi-set" data-set="tone"><h4>Ringing tone for calls</h4><div class="tones">${Object.entries(TONES).map(([k,v])=>`<label class="tone-row"><input type="radio" name="tone" value="${k}" ${k===tn?"checked":""}><span>${v}</span><button type="button" data-gi-play="${k}" aria-label="Play ${v}">${ICO.play}</button></label>`).join("")}</div></div>`,
+      pin:`<div class="gi-set" data-set="pin"><label class="switch-row"><span>Pin group chat on top of message list</span><input type="checkbox" data-gi-pin ${g.pinned[mid]?"checked":""}></label></div>`,
+      add:`<div class="gi-set" data-set="add"><h4>Who can add members</h4><select data-gi-policy ${isAdmin(g)?"":"disabled"}><option value="everyone" ${g.addPolicy==="everyone"?"selected":""}>All members</option><option value="admins" ${g.addPolicy==="admins"?"selected":""}>Only admins</option></select>${isAdmin(g)?"":'<small class="subtle">Only admins can change this.</small>'}</div>`,
+      clear:`<div class="gi-set" data-set="clear"><button class="btn btn-outline btn-full" type="button" data-gi-act="clear">Clear chat</button></div>`,
+      exit:`<div class="gi-set" data-set="exit"><button class="btn btn-outline btn-full danger-btn" type="button" data-gi-act="exit">Exit group</button></div>`};
+    return (only||Object.keys(rows)).map(k=>rows[k]).join("");
+  }
+  function renderGroupInfo(){
+    const g=state.groups.find(x=>x.id===gcId);if(!g)return;ensureGroup(g);const mid=me(),ql=giQ.trim().toLowerCase();
+    const media=mediaItems(g),links=[];g.messages.forEach(m=>{if(m.kind==="text")urlsIn(m.text).forEach(url=>links.push({url,m}))});const docs=g.messages.filter(m=>m.kind==="file");
+    let content="";
+    if(ql){
+      const mem=g.members.filter(id=>{const u=userById(id);return u&&((u.name||"")+" "+(u.username||"")).toLowerCase().includes(ql)});
+      const med=g.messages.filter(m=>(m.kind==="image"||m.kind==="video"||m.kind==="file")&&!m.viewOnce&&(((userById(m.from)?.name||"")+" "+(userById(m.from)?.username||"")+" "+(m.name||"")+" "+(m.kind==="image"?"photo image picture":m.kind==="video"?"video":"document file")).toLowerCase().includes(ql)));
+      const set=SETTINGS.filter(([,l])=>l.toLowerCase().includes(ql)).map(s=>s[0]);
+      content=(mem.length?`<h4 class="gi-h">Members</h4>${mem.map(id=>memberRow(g,id)).join("")}`:"")+(med.length?`<h4 class="gi-h">Media uploaded</h4><div class="gi-grid">${med.filter(m=>m.kind!=="file").map(mediaTile).join("")}</div>${docRows(med.filter(m=>m.kind==="file"))}`:"")+(set.length?`<h4 class="gi-h">Settings</h4>${settingsHTML(g,set)}`:"")||`<div class="empty">Nothing found for “${esc(giQ)}”.</div>`;
+    }else if(giTab==="members"){
+      content=`<div class="gi-bar"><b>${g.members.length} member${g.members.length===1?"":"s"}</b><button class="small-btn" type="button" data-gi-add>＋ Add member</button></div>`+g.members.slice().sort((a,b)=>(a===mid?-1:b===mid?1:0)).map(id=>memberRow(g,id)).join("");
+    }else if(giTab==="media"){
+      const myBytes=g.messages.filter(m=>m.from===mid&&["image","video","file","voice"].includes(m.kind)).reduce((n,m)=>n+(m.size||0),0);
+      content=`<div class="tabs gi-sub"><button type="button" data-gi-sub="media" class="${giSub==="media"?"active":""}">Media (${media.length})</button><button type="button" data-gi-sub="links" class="${giSub==="links"?"active":""}">Links (${links.length})</button><button type="button" data-gi-sub="docs" class="${giSub==="docs"?"active":""}">Docs (${docs.length})</button></div>`+
+        (giSub==="media"?(media.length?`<div class="gi-grid">${media.map(mediaTile).join("")}</div>`:'<div class="empty">No photos or videos yet.</div>'):giSub==="links"?linkRows(g,links):docRows(docs))+
+        `<div class="gi-free"><button class="btn btn-outline btn-full" type="button" data-gi-act="free">Free up storage${myBytes?` (${fmtSize(myBytes)})`:""}</button><small class="subtle">Removes only the media you uploaded in this group. Other members' media stays.</small></div>`;
+    }else content=settingsHTML(g);
+    $("giPanel").innerHTML=`<header class="gi-head"><button class="hd-btn" id="giBack" type="button" aria-label="Back">${ICO.back}</button><span>Group info</span><span></span></header>
+      <div class="gi-top"><label class="gi-photo ${isAdmin(g)?"editable":""}">${gAv(g,"xl")}${isAdmin(g)?`<input type="file" id="giPhoto" accept="image/*" class="hidden"><i>${ICO.camera}</i>`:""}</label><h2>${esc(g.name)}</h2><p class="subtle">Group · ${g.members.length} member${g.members.length===1?"":"s"}</p>${g.description?`<p class="gi-desc">${esc(g.description)}</p>`:""}</div>
+      <input class="searchbar gi-search" id="giSearch" placeholder="Search members, media or settings" value="${esc(giQ)}">
+      ${ql?"":`<div class="tabs gi-tabs"><button type="button" data-gi-tab="members" class="${giTab==="members"?"active":""}">MEMBERS</button><button type="button" data-gi-tab="media" class="${giTab==="media"?"active":""}">MEDIA</button><button type="button" data-gi-tab="settings" class="${giTab==="settings"?"active":""}">SETTINGS</button></div>`}
+      <div class="gi-content">${content}</div>`;
+    hydrate($("giPanel"));
+    const s=$("giSearch");if(giQ){s.focus();s.setSelectionRange(giQ.length,giQ.length)}
+  }
+  let tonePrev=null;
+  $("giPanel").addEventListener("input",e=>{if(e.target.id==="giSearch"){giQ=e.target.value;renderGroupInfo()}});
+  $("giPanel").addEventListener("change",async e=>{
+    const g=state.groups.find(x=>x.id===gcId);if(!g)return;const mid=me();
+    if(e.target.name==="tone"){g.ringtones[mid]=e.target.value;saveState();toast("Ringing tone saved.")}
+    else if(e.target.matches("[data-gi-pin]")){g.pinned[mid]=e.target.checked;saveState();toast(e.target.checked?"Pinned to the top of your Messages.":"Unpinned.")}
+    else if(e.target.matches("[data-gi-policy]")){if(!isAdmin(g)){toast("Only admins can change this.");return}g.addPolicy=e.target.value;saveState();toast(g.addPolicy==="admins"?"Only admins can add members.":"All members can add members.")}
+    else if(e.target.id==="giPhoto"&&e.target.files[0]){try{g.photo=await compressImg(e.target.files[0],500,.8);saveState();renderGroupInfo();renderGroupChat();toast("Group photo updated.")}catch(err){toast("Couldn't use that image.")}}
+  });
+  $("giPanel").addEventListener("click",e=>{
+    const g=state.groups.find(x=>x.id===gcId);if(!g)return;const mid=me();
+    if(e.target.closest("#giBack")){$("groupInfo").classList.add("hidden");return}
+    let b;
+    if((b=e.target.closest("[data-gi-tab]"))){giTab=b.dataset.giTab;renderGroupInfo();return}
+    if((b=e.target.closest("[data-gi-sub]"))){giSub=b.dataset.giSub;renderGroupInfo();return}
+    if((b=e.target.closest("[data-gi-theme]"))){g.themes[mid]=b.dataset.giTheme;saveState();renderGroupInfo();renderGroupChat();return}
+    if((b=e.target.closest("[data-gi-play]"))){if(tonePrev)tonePrev();tonePrev=playTone(b.dataset.giPlay,1800);return}
+    if((b=e.target.closest("[data-gi-dm]"))){const id=b.dataset.giDm;closeGroupChat();U.startChat(id);return}
+    if(e.target.closest("[data-gi-add]")){if(!canAdd(g)){toast("Only admins can add members to this group.");return}addMembers(g);return}
+    if((b=e.target.closest("[data-gi-act]"))){const a=b.dataset.giAct;
+      if(a==="mute"){g.muted[mid]=!g.muted[mid];saveState();renderGroupInfo();renderGroupChat();toast(g.muted[mid]?"Group muted.":"Group unmuted.")}
+      else if(a==="clear")clearGroup(g);
+      else if(a==="exit")exitGroup(g);
+      else if(a==="free"){const mine=g.messages.filter(m=>m.from===mid&&["image","video","file","voice"].includes(m.kind));if(!mine.length){toast("You haven't uploaded any media in this group.");return}const bytes=mine.reduce((n,m)=>n+(m.size||0),0);if(!confirm(`Remove the ${mine.length} media item${mine.length>1?"s":""} you uploaded in this group (${fmtSize(bytes)})? Other members' media stays.`))return;mine.forEach(m=>IDB.del(m.mediaId));g.messages=g.messages.filter(m=>!mine.includes(m));saveState();renderGroupInfo();renderGroupChat();toast("Freed up "+fmtSize(bytes)+".")}}
+  });
+  function addMembers(g){
+    const cands=U.myFriends().filter(f=>!g.members.includes(f.id));
+    U.openSheet("Add members",cands.length?cands.map(f=>`<label class="pick"><input type="checkbox" value="${f.id}">${avatarMarkup(f)}<span><b>${esc(f.name||f.username)}</b><small>@${esc(f.username||"member")}</small></span></label>`).join(""):'<div class="empty" style="margin-top:12px">All your friends are already in this group, or you have no friends to add yet.</div>',cands.length?'<div class="share-foot"><button class="btn btn-primary btn-full" id="vbAddMembers" style="margin:0">Add to group</button></div>':"");
+    const foot=$("uiSheetFoot");const h=ev=>{if(!ev.target.closest("#vbAddMembers"))return;const ids=[...$("uiSheetBody").querySelectorAll("input:checked")].map(i=>i.value);if(!ids.length){toast("Choose at least one friend.");return}
+      ids.forEach(id=>{if(!g.members.includes(id)){g.members.push(id);g.messages.push(norm({id:makeId(),kind:"system",from:me(),text:`${userById(me())?.name||"Someone"} added ${userById(id)?.name||"a member"}`,createdAt:Date.now()}))}});
+      saveState();foot.removeEventListener("click",h);U.closeSheet();renderGroupInfo();renderGroupChat();toast(`Added ${ids.length} member${ids.length>1?"s":""}.`)};
+    foot.addEventListener("click",h);
+  }
+
+  /* create group (with photo) */
+  window.vbCreateGroup=function(){
+    let photo="",emoji="🎨";const em=["🎨","💻","🎧","🍛","💪","📚","⚽","✈️","💼","🎮"];
+    U.openSheet("Create a group",`<div class="sheet-body-pad"><div class="cg-photo"><label class="cg-pick" id="cgPick"><span id="cgPrev">${ICO.camera}</span><input type="file" id="cgFile" accept="image/*" class="hidden"></label><small class="subtle">Add a group photo</small></div><label class="field"><span>Group name</span><input id="vbName" maxlength="40" placeholder="e.g. Ibadan Creatives"></label><label class="field"><span>Description</span><textarea id="vbDesc" maxlength="140" rows="3" placeholder="What is this group about?"></textarea></label><div class="field"><span>Icon (used when there is no photo)</span><div class="emoji-pick">${em.map((x,i)=>`<button type="button" class="${i?"":"on"}" data-vbem="${x}">${x}</button>`).join("")}</div></div><label class="field"><span>Who can add members?</span><select id="vbPolicy"><option value="everyone">All members</option><option value="admins">Only admins</option></select></label></div>`,'<div class="share-foot"><button class="btn btn-primary btn-full" id="vbCreate" style="margin:0">Create group</button></div>');
+    const body=$("uiSheetBody"),foot=$("uiSheetFoot");
+    body.onchange=async e=>{if(e.target.id==="cgFile"&&e.target.files[0]){try{photo=await compressImg(e.target.files[0],500,.8);$("cgPrev").innerHTML=`<img src="${photo}" alt="">`}catch(err){toast("Couldn't use that image.")}}};
+    body.onclick=e=>{const b=e.target.closest("[data-vbem]");if(b){emoji=b.dataset.vbem;body.querySelectorAll("[data-vbem]").forEach(x=>x.classList.toggle("on",x===b))}};
+    foot.onclick=e=>{if(!e.target.closest("#vbCreate"))return;const name=$("vbName").value.trim();if(name.length<3){toast("Give your group a name (at least 3 characters).");return}
+      const g=ensureGroup({id:makeId(),emoji,photo,name,description:$("vbDesc").value.trim(),desc:$("vbDesc").value.trim(),members:[me()],admins:[me()],addPolicy:$("vbPolicy").value,messages:[],createdBy:me(),createdAt:Date.now()});
+      g.messages.push(norm({id:makeId(),kind:"system",from:me(),text:"Group created",createdAt:Date.now()}));
+      state.groups.unshift(g);saveState();body.onchange=null;body.onclick=null;foot.onclick=null;U.closeSheet();showPage("communities");vbOpenGroup(g.id);toast("Group created.")};
+  };
+
+  /* ---------- friend profile: posts, friends, view all ---------- */
+  const priv=()=>U.openSheet("Private account",'<div class="sheet-body-pad" style="text-align:center"><div style="font-size:2.4rem">🔒</div><h3>User account is private</h3><p class="sheet-p">Only friends can see their posts and friends list.</p></div>',"");
+  function friendsOf(uid){return state.friends.map(f=>f.a===uid?f.b:f.b===uid?f.a:null).filter(Boolean).map(userById).filter(Boolean)}
+  function friendList(u){const fr=friendsOf(u.id);U.openSheet(`${fr.length} friend${fr.length===1?"":"s"}`,fr.length?fr.map(f=>`<div class="gi-row"><button class="pr-main" type="button" data-profile="${f.id}">${avatarMarkup(f)}<span class="person-info"><strong>${esc(f.name||f.username)}${f.id===me()?" (You)":""}</strong><small>@${esc(f.username||"member")}</small></span></button></div>`).join(""):'<div class="empty" style="margin-top:12px">No friends to show yet.</div>',"")}
+  document.getElementById("page-userprofile").addEventListener("click",e=>{
+    const b=e.target.closest("[data-ustat]");if(!b)return;const u=userById(U.getViewed());if(!u)return;
+    if(!U.canView(u)){priv();return}
+    const k=b.dataset.ustat;
+    if(k==="friends")friendList(u);
+    else if(k==="posts"){const t=document.querySelector("#page-userprofile .post-grid")||document.querySelector("#page-userprofile .tl-title");if(t)t.scrollIntoView({behavior:"smooth",block:"start"});else toast("No posts yet.")}
+    else if(k==="photos"){const ids=state.posts.filter(p=>p.userId===u.id&&p.media&&p.mediaType!=="video").sort((a,c)=>c.createdAt-a.createdAt).map(p=>p.id);if(ids.length)U.openViewer(ids[0],ids)}
+  });
+  const ps=document.querySelector("#page-profile .profile-stats");
+  if(ps)ps.addEventListener("click",e=>{const d=e.target.closest(".profile-stats>*");if(!d)return;const t=d.textContent;if(/Friends/i.test(t)){friendTab="friends";showPage("friends")}else if(/Posts/i.test(t)){$("profilePosts").scrollIntoView({behavior:"smooth",block:"start"})}});
+
+  /* ---------- help + legal ---------- */
+  window.vbHelp=function(){U.openSheet("Help",`<div class="sheet-body-pad"><p class="sheet-p">We usually reply within one working day.</p><a class="btn btn-primary btn-full" href="${SUPPORT_WA}?text=${encodeURIComponent("Hi BhigC, I need help with VIBEITY.")}" target="_blank" rel="noopener">Chat with us on WhatsApp</a><a class="btn btn-outline btn-full" href="mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("VIBEITY help")}">Email us<br><small>${SUPPORT_EMAIL}</small></a></div>`,"")};
+  document.body.insertAdjacentHTML("beforeend",'<div id="legal" class="hidden" role="dialog" aria-modal="true"><div class="lg-panel"><header class="lg-head"><button class="hd-btn" id="lgClose" type="button" aria-label="Close">'+ICO.back+'</button><span>Info and Terms</span><span></span></header><div class="tabs lg-tabs" id="lgTabs"></div><div class="lg-body" id="lgBody"></div></div></div>');
+  let lgTab="terms";
+  function drawLegal(){$("lgTabs").innerHTML=[["terms","Terms"],["data","Data Policy"],["guidelines","Guidelines"]].map(([k,l])=>`<button type="button" data-lg="${k}" class="${k===lgTab?"active":""}">${l}</button>`).join("");$("lgBody").innerHTML=`<h2>${LEGAL[lgTab].title}</h2>`+LEGAL[lgTab].html;$("lgBody").scrollTop=0}
+  window.vbLegal=function(tab){lgTab=tab||"terms";drawLegal();$("legal").classList.remove("hidden");document.body.classList.add("sheet-open")};
+  $("lgClose").onclick=()=>{$("legal").classList.add("hidden");document.body.classList.remove("sheet-open")};
+  $("lgTabs").addEventListener("click",e=>{const b=e.target.closest("[data-lg]");if(b){lgTab=b.dataset.lg;drawLegal()}});
+  const _ro=renderOnboarding;
+  renderOnboarding=function(){_ro();const s=steps[onboardingStep-1];if(s&&s.key==="terms"&&!document.getElementById("lgLinks")){$("stepContent").insertAdjacentHTML("beforeend",'<div id="lgLinks" class="lg-links"><button type="button" data-lglink="terms">Terms and Conditions</button><button type="button" data-lglink="data">Data Policy</button><button type="button" data-lglink="guidelines">Community Guidelines</button></div>')}};
+  document.addEventListener("click",e=>{const b=e.target.closest("[data-lglink]");if(b)vbLegal(b.dataset.lglink)});
+
+  renderChats();
+})();
+
 </script>
 </body>
 </html>
@@ -2005,4 +2489,192 @@ a{color:var(--softpink)}
 .auth-logo{display:block;width:84px;margin:0 auto 10px;filter:drop-shadow(0 8px 20px rgba(255,61,110,.4))}
 .auth-script{text-align:center;font-family:var(--script);color:var(--softpink);font-size:1.3rem;margin-top:16px;transform:rotate(-2deg)}
 #authPage #startDemo{margin-top:14px}
+</style>
+<style>
+/* ===== chat v2, group chat, calls, legal, comment icons, profile stats ===== */
+#chatTools{display:none!important}
+.chat-window{position:relative}
+.hd-btn{background:none;border:0;color:#fff;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;padding:0}
+.hd-btn:hover{background:rgba(255,255,255,.08)}
+.hd-btn svg,.cmp-plus svg,.cmp-act svg,.rec-cancel svg,.rec-once svg,.rec-send svg,.vp-play svg,.cam-bar svg,#apClose svg,#apOnce svg,#apSend svg,.call-btns svg,.dl svg,.fi svg,.once-ico svg,.as-grid svg,.gi-photo i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.vp-play svg path[fill]{fill:currentColor}
+.pop-menu{position:absolute;right:10px;top:58px;z-index:30;min-width:220px;background:var(--card2);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.55);padding:6px}
+.pop-menu button{display:block;width:100%;background:none;border:0;color:var(--text);padding:11px 12px;border-radius:10px;text-align:left;font-weight:600;font-size:.92rem}
+.pop-menu button:hover{background:rgba(255,255,255,.07)}.pop-menu .danger{color:#FF7A9A}
+
+/* composer */
+.chat-compose{display:block!important;padding:8px 10px calc(8px + env(safe-area-inset-bottom))!important}
+.cmp-main{display:flex;align-items:center;gap:8px}
+.cmp-plus{flex:0 0 42px;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card2);color:#fff;display:grid;place-items:center;padding:0}
+.cmp-input{flex:1;min-width:0;border-radius:999px;padding:12px 16px;background:var(--card2);color:var(--text);border:1px solid var(--line)}
+.cmp-act{flex:0 0 44px;width:44px;height:44px;border-radius:50%;border:0;background:var(--card2);color:#fff;display:grid;place-items:center;padding:0;border:1px solid var(--line)}
+.cmp-act.send{background:var(--purple);border-color:var(--purple);box-shadow:0 8px 18px rgba(139,92,246,.45)}
+.cmp-rec{display:flex;align-items:center;gap:12px;padding:4px 2px}
+.rec-dot{width:11px;height:11px;border-radius:50%;background:var(--pink);animation:vbBlink 1s infinite}
+@keyframes vbBlink{50%{opacity:.25}}
+.rec-time{flex:1;font-weight:700;color:#fff}
+.rec-cancel,.rec-once,.rec-send{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card2);color:#fff;display:grid;place-items:center;padding:0}
+.rec-once.on,#apOnce.on{background:var(--purple);border-color:var(--purple)}
+.rec-send{background:var(--purple);border-color:var(--purple)}
+.cmp-blocked{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 6px;color:var(--muted)}
+.bl-act{background:var(--pink);color:#fff;border:0;border-radius:999px;padding:8px 16px;font-weight:700}
+
+/* message kinds */
+.bubble .m-text{overflow-wrap:anywhere;white-space:pre-wrap}
+.bubble a{color:inherit;text-decoration:underline}
+.m-media{display:block;position:relative;padding:0;border:0;border-radius:12px;overflow:hidden;background:#0e0a14;max-width:240px}
+.m-media img,.m-media video{display:block;max-width:240px;max-height:300px;width:100%;object-fit:cover}
+.m-play{position:absolute;inset:0;display:grid;place-items:center;font-size:2rem;color:#fff;background:rgba(0,0,0,.25)}
+.m-cap{margin-top:6px;overflow-wrap:anywhere}
+.m-file{display:flex;align-items:center;gap:12px;width:100%;min-width:200px;background:rgba(0,0,0,.2);border:0;border-radius:12px;padding:10px;color:inherit;text-align:left}
+.m-file .fi{width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.14);display:grid;place-items:center}
+.m-file .fn{flex:1;min-width:0}.m-file b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.m-file small{display:block;opacity:.75}
+.m-voice{display:flex;align-items:center;gap:10px;min-width:210px}
+.vp-play{width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.2);color:inherit;display:grid;place-items:center;padding:0}
+.vp-bar{flex:1;height:5px;border-radius:99px;background:rgba(255,255,255,.25);overflow:hidden}.vp-bar i{display:block;height:100%;width:0;background:currentColor}
+.vp-dur{font-size:.78rem;opacity:.85;min-width:34px;text-align:right}
+.m-once{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.1);border:1px dashed rgba(255,255,255,.4);border-radius:12px;padding:10px 12px;color:inherit;text-align:left;width:100%}
+.m-once.done,.m-once.mine{border-style:solid;opacity:.9}
+.m-once small{display:block;opacity:.8;font-size:.72rem}
+.once-ico{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1.5px solid currentColor}
+.once-ico svg{width:18px;height:18px}
+.sys-msg{text-align:center;color:var(--muted);font-size:.78rem;margin:8px auto;background:rgba(255,255,255,.06);border-radius:999px;padding:5px 14px;width:max-content;max-width:90%}
+.bubble.flash{animation:vbFlash 1.6s}
+@keyframes vbFlash{0%,60%{box-shadow:0 0 0 3px var(--pink)}100%{box-shadow:none}}
+mark{background:rgba(255,61,110,.35);color:inherit;border-radius:3px;padding:0 2px}
+.sr-title{padding:12px 14px 4px;color:var(--softpink);font-weight:800;font-size:.8rem;letter-spacing:.06em;text-transform:uppercase}
+.unread-dot.muted{background:var(--muted);color:#17121F}
+.g-av{display:grid;place-items:center;width:50px;height:50px;border-radius:50%;background:var(--grad);overflow:hidden;font-size:1.5rem;flex:0 0 auto}
+.g-av img{width:100%;height:100%;object-fit:cover}
+.g-av.sm{width:42px;height:42px;font-size:1.25rem}.g-av.lg{width:120px;height:120px;font-size:3rem}.g-av.xl{width:110px;height:110px;font-size:3rem}
+.grp-ico{overflow:hidden}.grp-ico img{width:100%;height:100%;object-fit:cover}
+
+/* attach sheet, preview, camera */
+#attachSheet{position:fixed;inset:0;z-index:185;background:rgba(8,5,14,.7);display:flex;align-items:flex-end;justify-content:center}
+.as-card{width:min(100%,520px);background:var(--card);border-radius:24px 24px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));border:1px solid var(--line)}
+.as-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.as-grid button{display:grid;justify-items:center;gap:8px;background:none;border:0;color:var(--text);font-weight:700;font-size:.82rem}
+.as-grid button span{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;background:var(--grad);color:#fff}
+.as-cancel{margin-top:16px;width:100%;background:var(--card2);color:#fff;border:1px solid var(--line);border-radius:14px;padding:13px;font-weight:700}
+#attachPreview{position:fixed;inset:0;z-index:190;background:#0b0812;display:flex;flex-direction:column}
+.ap-top{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;color:#fff}
+.ap-top button{width:42px;height:42px;border-radius:50%;border:0;background:rgba(255,255,255,.1);color:#fff;display:grid;place-items:center}
+#apBody{flex:1;min-height:0;display:grid;place-items:center;padding:8px}
+#apBody img,#apBody video{max-width:100%;max-height:100%;object-fit:contain;border-radius:12px}
+.ap-file{display:grid;justify-items:center;gap:8px;color:#fff;text-align:center;padding:30px}.ap-file span svg{width:64px;height:64px}.ap-file small{color:var(--muted)}
+#apThumbs{display:flex;gap:8px;padding:6px 12px;overflow-x:auto}
+#apThumbs button{width:54px;height:54px;border-radius:10px;border:2px solid transparent;background:var(--card);overflow:hidden;padding:0;color:#fff;flex:0 0 auto}
+#apThumbs button.on{border-color:var(--pink)}#apThumbs img{width:100%;height:100%;object-fit:cover}
+.ap-bottom{display:flex;gap:10px;align-items:center;padding:10px 12px calc(12px + env(safe-area-inset-bottom))}
+#apCaption{flex:1;min-width:0;border-radius:999px;padding:12px 16px;background:var(--card2);color:#fff;border:1px solid var(--line)}
+#apOnce,#apSend{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--card2);color:#fff;display:grid;place-items:center;padding:0;flex:0 0 auto}
+#apSend{background:var(--purple);border-color:var(--purple)}
+.ap-hint{text-align:center;color:var(--softpink);font-size:.8rem;padding:0 12px 10px}
+#cameraModal{position:fixed;inset:0;z-index:195;background:#000;display:flex;flex-direction:column}
+#camVideo{flex:1;min-height:0;width:100%;object-fit:cover}
+.cam-bar{display:flex;justify-content:space-around;align-items:center;padding:18px 12px calc(22px + env(safe-area-inset-bottom));background:#000}
+.cam-bar button{width:48px;height:48px;border-radius:50%;border:0;background:rgba(255,255,255,.15);color:#fff;display:grid;place-items:center;padding:0}
+.cam-bar #camShot{width:70px;height:70px;background:#fff;border:5px solid rgba(255,255,255,.45);box-shadow:0 0 0 3px #000 inset}
+
+/* lightbox */
+#lightbox{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.94);display:grid;place-items:center}
+#lbBody{max-width:100vw;max-height:100dvh;display:grid;place-items:center;width:100%;height:100%}
+#lbBody img,#lbBody video{max-width:100%;max-height:100dvh;object-fit:contain}
+#lbClose{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:2;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:1.1rem}
+.lb-audio{display:grid;gap:18px;justify-items:center;color:#fff}.lb-mic{font-size:4rem}
+
+/* calls */
+#callScreen{position:fixed;inset:0;z-index:210;background:linear-gradient(170deg,#2a1650,#17121F 60%,#0f0b16);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(60px + env(safe-area-inset-top)) 20px calc(40px + env(safe-area-inset-bottom));color:#fff;text-align:center}
+.call-top{display:grid;justify-items:center;gap:8px}
+.call-av{width:130px;height:130px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 6px rgba(255,61,110,.25),0 0 0 14px rgba(139,92,246,.18);margin-bottom:14px;display:grid;place-items:center}
+.call-av .avatar,.call-av .g-av{width:100%;height:100%;font-size:3.4rem;flex-basis:auto}
+#callName{margin:0;font-size:1.8rem}#callState,#callTimer{margin:0;color:var(--muted)}
+.call-note{color:var(--muted);font-size:.78rem;max-width:30ch;margin:0}
+.call-btns{display:flex;gap:26px;align-items:center}
+.call-btns button{width:62px;height:62px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;padding:0}
+.call-btns button.on{background:#fff;color:#17121F}.call-btns .end{background:#E11D48;width:72px;height:72px}.call-btns .end svg{transform:rotate(0)}
+
+/* group chat */
+.gc{position:fixed;inset:0;z-index:120;background:rgba(8,5,14,.65);display:grid;place-items:center}
+.gc-panel{--mine:#8B5CF6;--gcbg:#17121F;position:relative;width:min(100%,640px);height:100%;display:flex;flex-direction:column;background:var(--bg)}
+@media(min-width:800px){.gc-panel{height:min(calc(100dvh - 40px),820px);border-radius:22px;overflow:hidden;border:1px solid var(--line)}}
+.gc-head{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 8px 8px;background:var(--card);border-bottom:1px solid var(--line);flex:0 0 auto}
+.gc-title{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;color:#fff;text-align:left;padding:2px}
+.gc-title span{display:block;min-width:0}.gc-title b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gc-title small{display:block;color:var(--muted)}
+.gc-msgs{flex:1;min-height:0;overflow-y:auto;padding:14px 12px;background:var(--gcbg);display:flex;flex-direction:column;gap:6px}
+.gc-compose{background:var(--card);border-top:1px solid var(--line);flex:0 0 auto}
+.gc .bubble,.gc-msgs .bubble{align-self:flex-start;max-width:min(82%,520px);background:var(--card2);color:var(--text);border-radius:16px;border-bottom-left-radius:4px;padding:8px 12px 6px;box-shadow:none}
+.gc-msgs .bubble.mine{align-self:flex-end;background:var(--mine);color:#fff;border-radius:16px;border-bottom-right-radius:4px}
+.gc-msgs .bubble small{display:flex;justify-content:flex-end;gap:4px;opacity:.7;font-size:.68rem;margin-top:3px}
+.gc-msgs .bubble .sender{display:block;color:var(--softpink);font-size:.74rem;margin-bottom:2px}
+.gc-msgs .tick{color:#fff}
+.gi{position:fixed;inset:0;z-index:125;background:var(--bg);overflow-y:auto}
+.gi-panel{width:min(100%,640px);margin:0 auto;padding-bottom:40px}
+.gi-head{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 8px 8px;font-weight:800;text-align:center;color:#fff;position:sticky;top:0;background:var(--bg);z-index:2}
+.gi-top{display:grid;justify-items:center;gap:6px;padding:10px 16px 14px;text-align:center}
+.gi-top h2{margin:6px 0 0}.gi-desc{color:var(--ink2);max-width:42ch;margin:6px 0 0}
+.gi-photo{position:relative;display:block}.gi-photo.editable{cursor:pointer}
+.gi-photo i{position:absolute;right:-2px;bottom:-2px;width:36px;height:36px;border-radius:50%;background:var(--purple);display:grid;place-items:center;border:3px solid var(--bg);color:#fff;font-style:normal}
+.gi-search{display:block;margin:6px 16px 10px;width:calc(100% - 32px)}
+.gi-tabs,.gi-sub{margin:0 16px 10px;display:flex;gap:8px;overflow-x:auto}
+.gi-tabs button{flex:1}
+.gi-content{padding:0 16px}
+.gi-bar{display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px}
+.gi-row{display:flex;align-items:center;gap:12px;padding:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:8px}
+.gi-h{margin:16px 0 8px;color:var(--softpink);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase}
+.gi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.gi-tile{position:relative;padding:0;border:0;border-radius:12px;overflow:hidden;aspect-ratio:1;background:var(--card)}
+.gi-tile img,.gi-tile video{width:100%;height:100%;object-fit:cover;display:block}
+.gi-link{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;overflow-wrap:anywhere}
+.gi-link b{display:block;color:var(--softpink)}.gi-link small{color:var(--muted)}
+.gi-doc{background:var(--card)!important;margin-bottom:8px;color:var(--text)}
+.gi-free{margin-top:16px;display:grid;gap:8px}
+.gi-set{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.gi-set h4{margin:0 0 10px;color:#fff}
+.gi-set select{width:100%;padding:12px;border-radius:12px;background:var(--card2);color:var(--text);border:1px solid var(--line)}
+.swatches{display:flex;gap:10px;flex-wrap:wrap}
+.swatches button{width:62px;height:62px;border-radius:16px;border:3px solid transparent;color:#fff;font-size:.66rem;font-weight:800;display:grid;place-items:end center;padding:0 0 6px}
+.swatches button.on{border-color:#fff}
+.tone-row{display:flex;align-items:center;gap:12px;padding:8px 0;color:var(--text);border-bottom:1px solid var(--line)}
+.tone-row:last-child{border-bottom:0}.tone-row span{flex:1}.tone-row input{accent-color:var(--pink)}
+.tone-row button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card2);color:#fff;display:grid;place-items:center;padding:0}
+.danger-btn{color:#FF7A9A!important;border-color:rgba(255,122,154,.5)!important}
+.cg-photo{display:grid;justify-items:center;gap:6px;margin-bottom:12px}
+.cg-pick{width:96px;height:96px;border-radius:50%;background:var(--card2);border:2px dashed rgba(255,255,255,.3);display:grid;place-items:center;overflow:hidden;cursor:pointer;color:#fff}
+.cg-pick svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.8}.cg-pick img{width:100%;height:100%;object-fit:cover}
+
+/* legal */
+#legal{position:fixed;inset:0;z-index:130;background:var(--bg);overflow:hidden;display:flex;justify-content:center}
+.lg-panel{width:min(100%,760px);height:100%;display:flex;flex-direction:column}
+.lg-head{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 8px 8px;font-weight:800;text-align:center;color:#fff}
+.lg-tabs{margin:0 16px 8px;display:flex;gap:8px;overflow-x:auto}.lg-tabs button{flex:1;white-space:nowrap}
+.lg-body{flex:1;overflow-y:auto;padding:6px 20px 40px}
+.lg-body h2{margin:6px 0 4px}.lg-body h3{margin:20px 0 6px;font-size:1.05rem;color:var(--softpink)}
+.lg-body p{color:#E4E1F1;line-height:1.65;margin:0 0 10px}.lg-date{color:var(--muted)!important;font-size:.82rem}.lg-note{color:var(--muted)!important;font-size:.8rem;border-top:1px solid var(--line);padding-top:12px;margin-top:24px}
+.lg-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.lg-links button{background:none;border:0;color:var(--softpink);text-decoration:underline;padding:4px 0;font-weight:600}
+
+/* comments: icons + photo */
+.cm-actions{gap:20px}
+.cm-actions button{display:inline-flex;align-items:center;gap:5px;color:var(--muted);padding:4px 0}
+.cm-actions button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cm-actions button.on svg{fill:currentColor}
+.cm-actions button span{font-size:.78rem;font-weight:700;min-width:8px}
+.cm-img{display:block;margin-top:8px;padding:0;border:0;border-radius:14px;overflow:hidden;max-width:220px;background:var(--card2)}
+.cm-img img{display:block;width:100%;max-height:240px;object-fit:cover}
+.cm-attach{flex:0 0 42px;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card2);color:#fff;display:grid;place-items:center;padding:0}
+.cm-attach svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cm-preview{position:relative;margin:8px 14px 0;width:max-content;max-width:calc(100% - 28px)}
+.cm-preview img{display:block;max-height:110px;border-radius:12px}
+.cm-preview button{position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;border:0;background:var(--pink);color:#fff}
+
+/* viewer: scroll through all saved / profile posts */
+.viewer-scroll{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
+.viewer-scroll::-webkit-scrollbar{display:none}
+
+/* friend profile stats are real buttons */
+.up-stat{background:none;border:0;color:inherit;text-align:left;padding:4px 6px;margin:-4px -6px;border-radius:10px;cursor:pointer}
+.up-stat:hover,.up-viewall:hover{background:rgba(255,255,255,.07)}
+.up-stat b{display:block;font-size:1.25rem;color:#fff}.up-stat span{color:var(--muted);font-size:.8rem}
+.up-viewall{background:none;border:0;color:var(--softpink);font-size:.82rem;font-weight:700;padding:6px 8px;border-radius:10px;cursor:pointer}
+
 </style>

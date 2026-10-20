@@ -45,3 +45,10 @@ Posts, reels, likes, comments, saves, shares (Phase 3), swipes/matches/friends (
 3. Supabase -> Table Editor -> `profiles`: your row shows name, username, photo_url, onboarded = true.
 4. Supabase -> Storage -> `avatars`: a folder with your user id and `avatar.jpg`.
 5. Refresh the site: you stay logged in. Log out and log in again: you go straight to the app.
+
+## Added in the chat/groups update
+- Database already updated live (see `supabase/migration-06-chat-media-groups.sql`): image comments, chat media + view once, mute/clear/block, group photo, admins, who-can-add-members, group personal settings.
+- Chat photos, videos, files and voice notes are stored in the browser (IndexedDB) for now. They move to Supabase Storage in the chat phase.
+- Voice calls are a demo screen for now (ringing tone, mute, timer). Real calling needs WebRTC and is planned with the chat phase.
+- Legal text lives in `legal/` (Terms, Data Policy, Community Guidelines) and is also built into the app (Settings -> Info and Terms).
+- Support email is set in two places in `index.html`: the `SUPPORT_EMAIL` constant (Help sheet) and the legal text. Change it there if you want a different address.
