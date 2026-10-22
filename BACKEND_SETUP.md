@@ -52,3 +52,23 @@ Posts, reels, likes, comments, saves, shares (Phase 3), swipes/matches/friends (
 - Voice calls are a demo screen for now (ringing tone, mute, timer). Real calling needs WebRTC and is planned with the chat phase.
 - Legal text lives in `legal/` (Terms, Data Policy, Community Guidelines) and is also built into the app (Settings -> Info and Terms).
 - Support email is set in two places in `index.html`: the `SUPPORT_EMAIL` constant (Help sheet) and the legal text. Change it there if you want a different address.
+
+## Phase 3 status: posts, feed, likes, saves, shares and comments are now on the real database
+Works for real accounts (demo mode stays separate and never touches the database):
+- Posting text, photos and videos: files go to Supabase Storage (`posts` bucket), the post goes in the `posts` table.
+- For You feed: loaded from the database; a post you have watched is recorded and does not come back.
+- Likes, saves and shares: stored per person, shown to everyone as numbers only (never who).
+- Comments, replies, comment photos, comment likes, saves and shares: stored in the database.
+- Profile grid and Saved tab: loaded from the database; unsaving removes it from Saved and from the database.
+- Private accounts: their posts only reach friends (enforced by the database).
+
+Still to come: Phase 4 (swipes, matches, friend requests and friends in the database), Phase 5 (chats and calls), Phase 6 (groups).
+Until Phase 4, real accounts cannot become friends in the database, so a private account's posts stay hidden from other real users.
+Test posts you made on a real account before Phase 3 lived only in the browser and are cleared on first sign-in.
+
+## How to test Phase 3 on your live site (two accounts needed)
+1. Account A: post a text post and a photo post. In Supabase -> Table Editor -> `posts` you see two rows, and Storage -> `posts` shows a folder with A's id.
+2. Account B (another browser or private window): the For You feed shows A's posts. Like, save, comment (try a photo comment) and share one.
+3. Supabase -> `post_likes`, `post_saves`, `comments`, `post_shares` each show rows. On A's phone the numbers go up but A cannot see who did it.
+4. Watch a few posts, refresh: the watched posts do not return (`post_views` has rows).
+5. Make account A private, then check B can no longer see A's posts.
