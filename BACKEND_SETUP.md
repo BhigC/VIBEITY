@@ -72,3 +72,9 @@ Test posts you made on a real account before Phase 3 lived only in the browser a
 3. Supabase -> `post_likes`, `post_saves`, `comments`, `post_shares` each show rows. On A's phone the numbers go up but A cannot see who did it.
 4. Watch a few posts, refresh: the watched posts do not return (`post_views` has rows).
 5. Make account A private, then check B can no longer see A's posts.
+
+## Latest update (full-screen reels, post screen, crop/trim, search, private groups)
+- Database already updated live (see `supabase/migration-08-cover-trim-private-groups.sql`): profile cover, video trim points, public/private groups with join requests.
+- Email sending: see `BREVO_SMTP_STEPS.md`.
+- Group chat messages and group member lists are still stored in the browser. They move to the database in the groups phase.
+- Videos are trimmed without re-encoding: the full video is uploaded and playback uses the part you chose.
