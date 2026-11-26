@@ -78,3 +78,11 @@ Test posts you made on a real account before Phase 3 lived only in the browser a
 - Email sending: see `BREVO_SMTP_STEPS.md`.
 - Group chat messages and group member lists are still stored in the browser. They move to the database in the groups phase.
 - Videos are trimmed without re-encoding: the full video is uploaded and playback uses the part you chose.
+
+## Fix-list update (passwords, no demo, responsive, speed, background posting, covers, delete, notifications)
+- UPLOAD THE NEW `assets/` FOLDER together with `index.html`. The big images now load from there (the page went from 2.1 MB to 0.4 MB and the images are cached by the phone).
+- Database: `supabase/migration-09-post-cover.sql` is already applied (video cover picture).
+- Demo mode and demo data are removed. Anything left on a phone from earlier tests is wiped on the next open.
+- Posts upload in the background: the post screen closes at once, a banner shows progress, and the new post appears at the top of Reels when finished.
+- You can delete any of your posts on your profile (trash icon on each post) or from the delete button on your own reel. Photos, videos and covers are removed from storage too.
+- Message notifications are on unless turned off in Settings -> Notifications. They fire the moment a message arrives (banner inside the app plus a phone/browser notification). Real users can only message each other after Phase 4 (friends) and Phase 5 (chats on the database). Notifications while the app is fully closed need web push, which is part of Phase 5.
